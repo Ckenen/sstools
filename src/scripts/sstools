@@ -5,6 +5,9 @@ from sstools.commands.filter_bam import FilterBam
 from sstools.commands.mark_haplotype import MarkHaplotype
 from sstools.commands.mark_duplicate import MarkDuplicate
 from sstools.commands.mark_region import MarkRegion
+from sstools.commands.stat_genomic_coverage import StatGenomicCoverage
+from sstools.commands.stat_duplicate import StatDuplicate
+from sstools.commands.calculate_cwr import CalculateCWR
 
 usage = """
 Tools for Strand-seq analysis.
@@ -17,14 +20,10 @@ Commands:
        MarkDuplicate    Mark duplicates for Strand-seq.
        MarkRegion       Mark regions, such as whitelist or blacklist.
        MarkHaplotype    Mark the parental for each read according to provided HET SNVs.
-       
        StatGenomicCov   Statistic genomic coverage.
-       
-       MarkWhitelist    Mark the reads that overlap with whitelist regions.
-       MarkBlacklist    Mark the reads that overlap with blacklist regions.
-       
-       
-       
+       StatDuplicate    Statistic PCR duplicate.
+       CalculateCWR     Calculate Crick/Watson ratio.
+
     -- Assembly
        ClusterCells
        SplitHaplotype
@@ -49,6 +48,10 @@ def main():
         MarkDuplicate()
     elif command == "MarkRegion":
         MarkRegion()
+    elif command == "StatGenomicCoverage":
+        StatGenomicCoverage()
+    elif command == "StatDuplicate":
+        StatDuplicate()
     else:
         print("Error: unknown command %s." % command)
         print(usage)

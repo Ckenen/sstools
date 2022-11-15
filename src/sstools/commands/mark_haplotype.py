@@ -56,7 +56,7 @@ class MarkHaplotype(object):
                     ps = record.samples[name]["PS"]
                     if ps == ".":
                         continue
-                    if ps != "PATMAT" or ps != "HOMVAR": # Only available for GIAB VCF
+                    if ps != "PATMAT": # and ps != "HOMVAR": # Only available for GIAB VCF
                         continue
                     gt = record.samples[name]["GT"]
                     allele1 = record.alleles[gt[0]]
