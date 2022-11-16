@@ -8,6 +8,7 @@ from sstools.commands.mark_region import MarkRegion
 from sstools.commands.stat_genomic_coverage import StatGenomicCoverage
 from sstools.commands.stat_duplicate import StatDuplicate
 from sstools.commands.calculate_cwr import CalculateCWR
+from sstools.commands.stat_bin_read import StatBinRead
 
 usage = """
 Tools for Strand-seq analysis.
@@ -15,7 +16,7 @@ Tools for Strand-seq analysis.
 Usage: %s <command> [options]
 
 Commands:
-    -- Quality control
+    -- Developed
        FilterBam        Filter bam file for Strand-seq.
        MarkDuplicate    Mark duplicates for Strand-seq.
        MarkRegion       Mark regions, such as whitelist or blacklist.
@@ -23,6 +24,10 @@ Commands:
        StatGenomicCov   Statistic genomic coverage.
        StatDuplicate    Statistic PCR duplicate.
        CalculateCWR     Calculate Crick/Watson ratio.
+       StatBinRead      Statistic read count for each bin and plot barplot.
+
+    -- Developing
+       
 
     -- Assembly
        ClusterCells
@@ -52,6 +57,10 @@ def main():
         StatGenomicCoverage()
     elif command == "StatDuplicate":
         StatDuplicate()
+    elif command == "CalculateCWR":
+        CalculateCWR()
+    elif command == "StatBinRead":
+        StatBinRead()
     else:
         print("Error: unknown command %s." % command)
         print(usage)
