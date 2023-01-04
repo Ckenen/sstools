@@ -25,8 +25,15 @@ class MarkRegion(object):
         self.hit = 0
         self.not_hit = 0
         
+        self.fh = None
+        self.fh = open(self.outfile + ".hits.txt", "w+")
+        self.fh.write("ReadName\tHit\n")
+        
         self.execute()
         
+        if self.fh is not None:
+            self.fh.close()
+                    
         print("Infile: %s" % self.infile)
         print("Region: %s" % self.options.region)
         print("Outfile: %s" % self.outfile)
@@ -79,6 +86,8 @@ class MarkRegion(object):
                 else:
                     self.not_hit += 1
                 s = "Y" if is_hit else "N"
+                if self.fh is not None:
+                    self.fh.write("%s\t%s\n" % (segment.query_name, s))
                 segment.set_tag(self.options.tag_name, s)
                 if self.options.remove_hit and is_hit:
                     continue

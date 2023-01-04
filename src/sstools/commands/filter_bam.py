@@ -39,7 +39,7 @@ class FilterBam(object):
         
         # run
         if self.options.require_proper_pair:
-            raise NotImplementedError()
+            self.filter_paired_end_bam()
         else:
             self.filter_single_end_bam()
             
@@ -157,7 +157,7 @@ class FilterBam(object):
                                 continue
                         else:
                             self.primary += 1
-                            if require_proper_paired and not segment.is_proper_paired:
+                            if require_proper_paired and not segment.is_proper_pair:
                                 self.improper_paired += 1
                                 continue
                             if not self.check_mapping_quality(segment):
@@ -175,7 +175,8 @@ class FilterBam(object):
     def filter_paired_end_bam(self):
         if self.options.both_pass:
             raise NotImplementedError()
-        self.filter_single_end_bam(require_proper_paired=True)
+        else:
+            self.filter_single_end_bam(require_proper_paired=True)
         
         
 if __name__ == "__main__":

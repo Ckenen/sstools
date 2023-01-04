@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import optparse
+import json
 from collections import Counter, defaultdict
 import pysam
 from pyBioInfo.Range import GRange
@@ -21,13 +22,20 @@ class MarkHaplotype(object):
         self.outfile = None
         self.init_parameters()
         self.counter = defaultdict(int)
+        
+        self.fh = open(self.outfile + ".detail.txt", "w+")
+        self.fh.write("ReadName\tParental\tDetail\n")
+               
         self.execute()
+        
+        self.fh.close()
+        
         total = sum(self.counter.values())
         print("Total: %d" % total)
         print("Paternal: %d (%.2f%%)" % (self.counter["P"], utils.divide_zero(self.counter["P"] * 100, total)))
         print("Maternal: %d (%.2f%%)" % (self.counter["M"], utils.divide_zero(self.counter["M"] * 100, total)))
         print("Other: %d (%.2f%%)" % (self.counter["O"], utils.divide_zero(self.counter["O"] * 100, total)))
-        print("Ambigous: %d (%.2f%%)" % (self.counter["A"], utils.divide_zero(self.counter["A"] * 100, total)))
+        print("Ambiguous: %d (%.2f%%)" % (self.counter["A"], utils.divide_zero(self.counter["A"] * 100, total)))
         print("Missing: %d (%.2f%%)" % (self.counter["-"], utils.divide_zero(self.counter["-"] * 100, total)))
         print("Unknown: %d (%.2f%%)" % (self.counter["U"], utils.divide_zero(self.counter["U"] * 100, total)))
 
@@ -41,24 +49,25 @@ class MarkHaplotype(object):
         if len(args) != 2:
             parser.print_help()
             exit(1)
-        assert options.phased.endswith(
-            ".bed.gz") or options.phased.endswith(".vcf.gz")
+        assert options.phased.endswith(".bed.gz") or options.phased.endswith(".vcf.gz")
         self.options = options
         self.infile = args[0]
         self.outfile = args[1]
 
     def load_phased_snps(self, f, chrom):
         if isinstance(f, pysam.VariantFile):
-            name = list(f.header.samples)[0]
+            sample = list(f.header.samples)[0]
             try:
                 for record in f.fetch(chrom):
                     start = record.pos - 1
-                    ps = record.samples[name]["PS"]
+                    ps = record.samples[sample]["PS"]
                     if ps == ".":
                         continue
-                    if ps != "PATMAT": # and ps != "HOMVAR": # Only available for GIAB VCF
+                    if ps != "PATMAT": # GIAB VCF
                         continue
-                    gt = record.samples[name]["GT"]
+                    # if ps == ".":
+                    #     continue
+                    gt = record.samples[sample]["GT"]
                     allele1 = record.alleles[gt[0]]
                     allele2 = record.alleles[gt[1]]
                     if len(allele1) > 1 or len(allele2) > 1:
@@ -71,12 +80,12 @@ class MarkHaplotype(object):
                     yield snp
             except ValueError:
                 pass
-        else:
+        elif isinstance(f, pysam.TabixFile):
             try:
                 for line in f.fetch(chrom):
-                    chrom, start, end, name = line.split("\t")[:4]
+                    chrom, start, end, sample = line.strip("\n").split("\t")[:4]
                     start, end = int(start), int(end)
-                    base_p, base_m = name.split("|")
+                    base_p, base_m = sample.split("|")
                     if base_p == base_m or len(base_p) > 1 or len(base_m) > 1:
                         continue
                     snp = GRange(chrom=chrom, start=start, end=end)
@@ -85,6 +94,8 @@ class MarkHaplotype(object):
                     yield snp
             except ValueError:
                 pass
+        else:
+            raise RuntimeError()
 
     def get_parentals(self, segment, snps):
         parentals = []
@@ -130,12 +141,13 @@ class MarkHaplotype(object):
 
     def execute(self):
         f1 = pysam.AlignmentFile(self.infile)
-        header = utils.add_pg_to_header(
-            f1.header.as_dict(), cl=" ".join(sys.argv))
+        header = utils.add_pg_to_header(f1.header.as_dict(), cl=" ".join(sys.argv))
         if self.options.phased.endswith(".vcf.gz"):
             f2 = pysam.VariantFile(self.options.phased)
-        else:
+        elif self.options.phased.endswith(".bed.gz"):
             f2 = pysam.TabixFile(self.options.phased)
+        else:
+            raise RuntimeError()
         fw = pysam.AlignmentFile(self.outfile, "wb", header=header)
         for chrom in f1.references:
             loader = ShiftLoader(self.load_phased_snps(f2, chrom))
@@ -145,6 +157,9 @@ class MarkHaplotype(object):
                 snps = list(loader.fetch(chrom=chrom, start=start, end=end))
                 parentals = self.get_parentals(segment, snps)
                 parental = self.determine_parental(parentals)
+                if self.fh is not None:
+                    detail = json.dumps(Counter(parentals))
+                    self.fh.write("%s\t%s\t%s\n" % (segment.query_name, parental, detail))
                 self.counter[parental] += 1
                 segment.set_tag(self.options.tag_name, parental)
                 fw.write(segment)

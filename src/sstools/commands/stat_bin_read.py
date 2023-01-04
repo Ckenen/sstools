@@ -278,7 +278,8 @@ class StatBinRead(object):
                     for ai in range(nrow * ncol):
                         if ai >= len(chroms):
                             axs[int(ai/ncol)][ai%ncol].set_visible(False)
-                    # plt.tight_layout()
+                    # axs[0][5].text(0, max_bin_count * 0.9, title, fontsize=24, va="center", ha="center")
+                    plt.tight_layout(rect=(0, 0, 1, 0.95))
                     plt.savefig("%s/barplot%s" % (outdir, suffix), dpi=300)
                     plt.close()
                     

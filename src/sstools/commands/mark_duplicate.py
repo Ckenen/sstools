@@ -25,9 +25,22 @@ class MarkDuplicate(object):
         self.total = 0
         self.uniq = 0
         self.duplicate_set_name = 0
-
+        
+        self.fh_ds = None
+        self.fh_read = None
+        if self.options.report:
+            self.fh_ds = open(self.outfile + ".ds.txt", "w+")
+            self.fh_ds.write("DuplicateSetName\tDuplicatSetSize\tReadNames\n")
+            self.fh_read = open(self.outfile + ".read.txt", "w+")
+            self.fh_read.write("ReadName\tDuplicateSetName\tDuplicateSetSize\tDuplicateSetIndex\n")
+            
         self.execute()
-
+        
+        if self.fh_ds is not None:
+            self.fh_ds.close()
+        if self.fh_read is not None:
+            self.fh_read.close()
+        
         print("Input: %s" % self.infile)
         print("Output: %s" % self.outfile)
         print("Total: %d" % self.total)
@@ -37,6 +50,8 @@ class MarkDuplicate(object):
         parser = optparse.OptionParser(usage=usage)
         parser.add_option("-d", "--max-diff", dest="max_diff", default=20, type="int",
                           help="Maximal difference. [%default]")
+        parser.add_option("-r", "--report", dest="report", action="store_true", default=False, 
+                          help="Report DuplicateSet details. (output.bam.ds.txt and output.bam.read.txt) [%default]")
         options, args = parser.parse_args(sys.argv[2:])
         if len(args) != 2:
             parser.print_help()
@@ -96,15 +111,25 @@ class MarkDuplicate(object):
                     continue
                 segments.append(segment)
             self.total += len(segments)
-            for items1 in self.clustering_by_start(segments):
-                for items2 in self.clustering_by_end(items1):
+            for segments_clustered_by_start in self.clustering_by_start(segments):
+                for segments_duplicate_set in self.clustering_by_end(segments_clustered_by_start):
                     self.uniq += 1
-                    for segment in items2:
+                    for segment in segments_duplicate_set:
                         segment.set_tag("DN", self.duplicate_set_name)
-                    self.mark_duplicates(items2)
+                    self.mark_duplicates(segments_duplicate_set)
+                    if self.fh_ds is not None:
+                        read_names = ",".join([item.query_name for item in segments_duplicate_set])
+                        line = "\t".join(map(str, [self.duplicate_set_name, len(segments_duplicate_set), read_names]))
+                        self.fh_ds.write(line + "\n")
                     self.duplicate_set_name += 1
             for segment in segments:
                 fw.write(segment)
+                if self.fh_read is not None:
+                    line = "\t".join(map(str, [segment.query_name, 
+                                            segment.get_tag("DN"), 
+                                            segment.get_tag("DS"), 
+                                            segment.get_tag("DI")]))
+                    self.fh_read.write(line + "\n")
         f.close()
         fw.close()
         
