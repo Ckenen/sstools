@@ -251,10 +251,12 @@ def benchmark_snp(args):
     
     all_results = [r.get() for r in results]
     
-    results = list(filter(lambda r: re.match("^chr[0-9]+$", r["Chrom"]), all_results))
+    pattern = "^chr[0-9]+$"
+    results = list(filter(lambda r: re.match(pattern, r["Chrom"]), all_results))
         
     data = dict()
     
+    data["Chrom_Pattern"] = pattern
     data["Reference_SNPs"] = sum([r["Reference_SNPs"] for r in results])
     data["Query_SNPs"] = sum([r["Query_SNPs"] for r in results])
     data["Filtered_Reference_SNPs"] = sum([r["Filtered_Reference_SNPs"] for r in results])
@@ -302,7 +304,7 @@ def benchmark_snp(args):
     data["Phasing_Identical"] = sum([r["Phasing_Identical"] for r in results])
     data["Phasing_Precision"] = np.divide(data["Phasing_Identical"], data["Phasing_Total"])   
     
-    data["Details"] = all_results
+    data["Chromosomes"] = all_results
             
     if options.output:  
         with open(options.output, "w+") as fw:
