@@ -51,7 +51,7 @@ class MakeCCComposite(object):
                 start0 = int(start0)
                 end0 = int(end0)
                 run = cell.split(".")[0]
-                bamfile = "results/mapping/mark_parental/%s/%s.bam" % (run, cell)
+                bamfile = "../1_NanoStrandseq/results/mapping/mark_parental/%s/%s.bam" % (run, cell)
                 with pysam.AlignmentFile(bamfile) as bam:
                     for segment in bam.fetch(chrom, start0, end0):
                         if segment.is_duplicate:

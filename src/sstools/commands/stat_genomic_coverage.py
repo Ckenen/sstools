@@ -42,17 +42,13 @@ class StatGenomicCoverage(object):
     def stat_by_chrom(path, chrom, percs, seed):
         regions = []
         with pysam.AlignmentFile(path) as f:
-            for segment in f.fetch(chrom):
-                if segment.is_unmapped:
+            for s in f.fetch(chrom):
+                if s.is_unmapped or s.is_secondary or s.is_supplementary:
                     continue
-                if segment.is_secondary:
+                if s.is_paired and (not s.is_proper_pair):
                     continue
-                if segment.is_supplementary:
-                    continue
-                if segment.is_paired and (not segment.is_proper_pair):
-                    continue
-                start = segment.reference_start
-                end = segment.reference_end
+                start = s.reference_start
+                end = s.reference_end
                 regions.append([start, end])
         random.seed(seed)
         n1 = len(regions) # total reads
@@ -78,7 +74,9 @@ class StatGenomicCoverage(object):
         return result
 
     def execute(self):
-        pool = multiprocessing.Pool(self.options.threads)
+        pool = None
+        if self.options.threads > 1:
+            pool = multiprocessing.Pool(self.options.threads)
         results = []
         chroms = []
         lengths = dict()
@@ -86,8 +84,12 @@ class StatGenomicCoverage(object):
             for i, chrom in enumerate(f.references):
                 chroms.append(chrom)
                 lengths[chrom] = f.get_reference_length(chrom)
-                res = pool.apply_async(self.stat_by_chrom, (self.infile, chrom, self.percentages, i))
-                results.append(res)
+                args = (self.infile, chrom, self.percentages, i)
+                if pool:
+                    r = pool.apply_async(self.stat_by_chrom, args)
+                else:
+                    r = self.stat_by_chrom(*args)
+                results.append(r)
         pool.close()
         pool.join()
 

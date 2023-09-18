@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 import sys
 import os
-from sstools.commands.filter_bam import FilterBam
-from sstools.commands.mark_haplotype import MarkHaplotype
-from sstools.commands.mark_duplicate import MarkDuplicate
-from sstools.commands.mark_region import MarkRegion
+from sstools.commands.filter_bam import filter_bam
+from sstools.commands.mark_duplicate import mark_duplicate
+from sstools.commands.mark_region import mark_region
+from sstools.commands.mark_haplotype import mark_haplotype
+from sstools.commands.stat_bin_read import stat_bin_read
+from sstools.commands.plot_bin_read import plot_bin_read
+from sstools.commands.benchmark_snp import benchmark_snp
 from sstools.commands.stat_genomic_coverage import StatGenomicCoverage
 from sstools.commands.stat_duplicate import StatDuplicate
 from sstools.commands.calculate_cwr import CalculateCWR
-from sstools.commands.stat_bin_read import StatBinRead
 from sstools.commands.stat_cell_haplotype import StatCellHaplotype
 from sstools.commands.pileup import Pileup
 from sstools.commands.cell_stats import CellStats
@@ -29,10 +31,13 @@ Commands:
        MarkDuplicate    Mark duplicates for Strand-seq.
        MarkRegion       Mark regions, such as whitelist or blacklist.
        MarkHaplotype    Mark the parental for each read according to provided HET SNVs.
+       StatBinRead      Calculate bin read count.
+       PlotBinRead      Plot bin read count.
+       
        StatGenomicCov   Statistic genomic coverage.
        StatDuplicate    Statistic PCR duplicate.
        CalculateCWR     Calculate Crick/Watson ratio.
-       StatBinRead      Statistic read count for each bin and plot barplot.
+       
        StatCellHap      Statistic single-cell haplotype precision.
        Pileup           Pileup base matrix.
        CellStats        Report GC content, sequencing depth, background, spikiness, genomic coverage.
@@ -40,6 +45,8 @@ Commands:
        MakeCCComposite
        CallInversion
        FetchWCRegion
+       
+       BenchmarkSNP
 
     -- Developing
        
@@ -64,21 +71,25 @@ def main():
         
     command = sys.argv[1]
     if command == "FilterBam":
-        FilterBam()
-    elif command == "MarkHaplotype":
-        MarkHaplotype()
+        filter_bam(sys.argv[2:])
     elif command == "MarkDuplicate":
-        MarkDuplicate()
+        mark_duplicate(sys.argv[2:])
     elif command == "MarkRegion":
-        MarkRegion()
+        mark_region(sys.argv[2:])
+    elif command == "MarkHaplotype":
+        mark_haplotype(sys.argv[2:])
+    elif command == "StatBinRead":
+        stat_bin_read(sys.argv[2:])
+    elif command == "PlotBinRead":
+        plot_bin_read(sys.argv[2:])
     elif command == "StatGenomicCov":
         StatGenomicCoverage()
     elif command == "StatDuplicate":
         StatDuplicate()
     elif command == "CalculateCWR":
         CalculateCWR()
-    elif command == "StatBinRead":
-        StatBinRead()
+    elif command == "BenchmarkSNP":
+        benchmark_snp(sys.argv[2:])
     elif command == "StatCellHap":
         StatCellHaplotype()
     elif command == "Pileup":
