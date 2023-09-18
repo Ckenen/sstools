@@ -229,10 +229,8 @@ def benchmark_snp(args):
                       help="Ignore SNPs outside of regions. [%default]")
     parser.add_option("-t", "--threads", dest="threads", type="int", default=1, metavar="INT", 
                       help="The number of parallel threads. [%default]")
-    parser.add_option("-d", "--detail", dest="detail", metavar="PATH", default="benchmark_detail.json",
-                      help="Save the benchmark results for each chromosome to PATH. [%default]")
     parser.add_option("-o", "--output", dest="output", metavar="PATH", default="benchmark_overall.json",
-                      help="Save the overall benchmark result to PATH. [%default]")
+                      help="Save the benchmark results (JSON) to PATH. [%default]")
     options, args = parser.parse_args(args)
     f_ref, f_que = args
     
@@ -251,13 +249,9 @@ def benchmark_snp(args):
     pool.close()
     pool.join()
     
-    results = [r.get() for r in results]
+    all_results = [r.get() for r in results]
     
-    if options.detail:
-        with open(options.detail, "w+") as fw:
-            json.dump(results, fw, indent=4)
-    
-    results = list(filter(lambda r: re.match("^chr[0-9]+$", r["Chrom"]), results))
+    results = list(filter(lambda r: re.match("^chr[0-9]+$", r["Chrom"]), all_results))
         
     data = dict()
     
@@ -307,6 +301,8 @@ def benchmark_snp(args):
     data["Phasing_Total"] = sum([r["Phasing_Total"] for r in results])
     data["Phasing_Identical"] = sum([r["Phasing_Identical"] for r in results])
     data["Phasing_Precision"] = np.divide(data["Phasing_Identical"], data["Phasing_Total"])   
+    
+    data["Details"] = all_results
             
     if options.output:  
         with open(options.output, "w+") as fw:
