@@ -46,7 +46,9 @@ Commands:
        CallInversion
        FetchWCRegion
        
-       BenchmarkSNP
+       BenchmarkSNP     Benchmark of SNPs.
+       CalGenomeDepth   Calculate genome depth.
+       DownsamplBam     Downsample BAM file.   
 
     -- Developing
        
@@ -82,6 +84,9 @@ def main():
         stat_bin_read(sys.argv[2:])
     elif command == "PlotBinRead":
         plot_bin_read(sys.argv[2:])
+    elif command == "CalGenomeDepth":
+        from sstools.commands.cal_genome_depth import cal_genome_depth
+        cal_genome_depth(sys.argv[2:])
     elif command == "StatGenomicCov":
         StatGenomicCoverage()
     elif command == "StatDuplicate":
@@ -90,6 +95,9 @@ def main():
         CalculateCWR()
     elif command == "BenchmarkSNP":
         benchmark_snp(sys.argv[2:])
+    elif command == "DownsampleBam":
+        from sstools.commands.downsample_bam import downsample_bam
+        downsample_bam(sys.argv[2:])
     elif command == "StatCellHap":
         StatCellHaplotype()
     elif command == "Pileup":
