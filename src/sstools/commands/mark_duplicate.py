@@ -15,94 +15,96 @@ This command will added three TAGs to the BAM file:
 """
 
 
-class MarkDuplicate(object):
-    def __init__(self):
-        self.options = None
-        self.infile = None
-        self.outfile = None
-        self.init_parameters()
-
-        self.total = 0
-        self.uniq = 0
-        self.duplicate_set_name = 0
+def cluster_by_start(segments, diff=0, strand=False):
+    
+    if strand:
         
-        self.fh_ds = None
-        self.fh_read = None
-        if self.options.report:
-            self.fh_ds = open(self.outfile + ".ds.txt", "w+")
-            self.fh_ds.write("DuplicateSetName\tDuplicatSetSize\tReadNames\n")
-            self.fh_read = open(self.outfile + ".read.txt", "w+")
-            self.fh_read.write("ReadName\tDuplicateSetName\tDuplicateSetSize\tDuplicateSetIndex\n")
+        segments_forward = list()
+        segments_reverse = list()
+        for s in segments:
+            if s.is_reverse:
+                segments_reverse.append(s)
+            else:
+                segments_forward.append(s)
+                
+        for segments in [segments_forward, segments_reverse]:
+            array = None
+            for s in sorted(segments, key=lambda item: item.reference_start):
+                if array is None:
+                    array = [s]
+                elif s.reference_start - array[-1].reference_start <= diff:
+                    array.append(s)
+                else:
+                    yield array
+                    array = [s]
+            if array is not None:
+                yield array
             
-        self.execute()
+    else:
         
-        if self.fh_ds is not None:
-            self.fh_ds.close()
-        if self.fh_read is not None:
-            self.fh_read.close()
-        
-        print("Input: %s" % self.infile)
-        print("Output: %s" % self.outfile)
-        print("Total: %d" % self.total)
-        print("Uniq: %d (%.2f%%)" % (self.uniq, utils.divide_zero(self.uniq * 100, self.total)))
-
-    def init_parameters(self):
-        parser = optparse.OptionParser(usage=usage)
-        parser.add_option("-d", "--max-diff", dest="max_diff", default=20, type="int",
-                          help="Maximal difference. [%default]")
-        parser.add_option("-r", "--report", dest="report", action="store_true", default=False, 
-                          help="Report DuplicateSet details. (output.bam.ds.txt and output.bam.read.txt) [%default]")
-        options, args = parser.parse_args(sys.argv[2:])
-        if len(args) != 2:
-            parser.print_help()
-            exit(1)
-        self.options = options
-        self.infile = args[0]
-        self.outfile = args[1]
-
-    def clustering_by_start(self, segments):
         array = None
-        for segment in sorted(segments, key=lambda item: item.reference_start):
+        for s in sorted(segments, key=lambda item: item.reference_start):
             if array is None:
-                array = [segment]
-            elif segment.reference_start - array[-1].reference_start <= self.options.max_diff:
-                array.append(segment)
+                array = [s]
+            elif s.reference_start - array[-1].reference_start <= diff:
+                array.append(s)
             else:
                 yield array
-                array = [segment]
+                array = [s]
         if array is not None:
             yield array
+                
 
-    def clustering_by_end(self, segments):
-        array = None
-        for segment in sorted(segments, key=lambda item: item.reference_end):
-            if array is None:
-                array = [segment]
-            elif segment.reference_end - array[-1].reference_end <= self.options.max_diff:
-                array.append(segment)
-            else:
-                yield array
-                array = [segment]
-        if array is not None:
+def cluster_by_end(segments, diff=0):
+    array = None
+    for segment in sorted(segments, key=lambda item: item.reference_end):
+        if array is None:
+            array = [segment]
+        elif segment.reference_end - array[-1].reference_end <= diff:
+            array.append(segment)
+        else:
             yield array
-
-    def mark_duplicates(self, segments):
-        segments = list(sorted(
-            segments, key=lambda item: item.reference_end - item.reference_start, reverse=True))
-        duplicate_set_size = len(segments)
-        for i, segment in enumerate(segments):
-            if i == 0:
-                segment.flag = segment.flag & 0b101111111111
-            else:
-                segment.flag = segment.flag | 0b010000000000
-            segment.set_tag("DS", duplicate_set_size)
-            segment.set_tag("DI", i)  # duplicate index
-
-    def execute(self):
-        f = pysam.AlignmentFile(self.infile)
-        header = utils.add_pg_to_header(f.header.as_dict(), cl=" ".join(sys.argv))
-        fw = pysam.AlignmentFile(self.outfile, "wb", header=header)
+            array = [segment]
+    if array is not None:
+        yield array
+            
+            
+def set_duplicate_flags(segments):
+    segments = list(sorted(
+        segments, key=lambda item: item.reference_end - item.reference_start, reverse=True))
+    duplicate_set_size = len(segments)
+    for i, segment in enumerate(segments):
+        if i == 0:
+            segment.flag = segment.flag & 0b101111111111
+        else:
+            segment.flag = segment.flag | 0b010000000000
+        segment.set_tag("DS", duplicate_set_size)
+        segment.set_tag("DI", i)  # duplicate index
+            
+              
+def run_pipeline(inbam, outbam,                
+                 diff=20,
+                 strand=False,
+                 f_read=None, 
+                 f_group=None):
+    
+    n_total = 0
+    n_uniq = 0
+    index = 0 # group index
+    
+    h_read = None
+    if f_read:
+        h_read = open(f_read, "w+")
+        h_read.write("Read\tGroup\tSize\tIndex\n")
+        
+    h_group = None
+    if f_group:
+        h_group = open(f_group, "w+")
+        h_group.write("Group\tSize\tReads\n")
+        
+    with pysam.AlignmentFile(inbam) as f, pysam.AlignmentFile(outbam, "wb", f) as fw:
         for chrom in f.references:
+            
             segments = []
             for segment in f.fetch(chrom):
                 if segment.is_secondary:
@@ -110,26 +112,61 @@ class MarkDuplicate(object):
                 if segment.is_supplementary:
                     continue
                 segments.append(segment)
-            self.total += len(segments)
-            for segments_clustered_by_start in self.clustering_by_start(segments):
-                for segments_duplicate_set in self.clustering_by_end(segments_clustered_by_start):
-                    self.uniq += 1
-                    for segment in segments_duplicate_set:
-                        segment.set_tag("DN", self.duplicate_set_name)
-                    self.mark_duplicates(segments_duplicate_set)
-                    if self.fh_ds is not None:
-                        read_names = ",".join([item.query_name for item in segments_duplicate_set])
-                        line = "\t".join(map(str, [self.duplicate_set_name, len(segments_duplicate_set), read_names]))
-                        self.fh_ds.write(line + "\n")
-                    self.duplicate_set_name += 1
+            n_total += len(segments)
+            
+            for segments1 in cluster_by_start(segments, diff, strand):
+                for segments2 in cluster_by_end(segments1, diff):
+                    n_uniq += 1
+                    for segment in segments2:
+                        segment.set_tag("DN", index)
+                    set_duplicate_flags(segments2)
+                    if h_group is not None:
+                        read_names = ",".join([item.query_name for item in segments2])
+                        line = "\t".join(map(str, [index, len(segments2), read_names]))
+                        h_group.write(line + "\n")
+                    index += 1
+                    
             for segment in segments:
                 fw.write(segment)
-                if self.fh_read is not None:
-                    line = "\t".join(map(str, [segment.query_name, 
-                                            segment.get_tag("DN"), 
-                                            segment.get_tag("DS"), 
-                                            segment.get_tag("DI")]))
-                    self.fh_read.write(line + "\n")
-        f.close()
-        fw.close()
+                if h_read is not None:
+                    line = "\t".join(map(str, [
+                        segment.query_name, 
+                        segment.get_tag("DN"), 
+                        segment.get_tag("DS"), 
+                        segment.get_tag("DI")]))
+                    h_read.write(line + "\n")
+                    
+    if h_group:
+        h_group.close()
         
+    print("Input: %s" % inbam)
+    print("Output: %s" % outbam)
+    print("Total: %d" % n_total)
+    print("Uniq: %d (%.2f%%)" % (n_uniq, utils.divide_zero(n_uniq * 100, n_total)))
+        
+    
+def mark_duplicate(args):
+    
+    parser = optparse.OptionParser(usage=usage)
+    
+    parser.add_option("-d", "--max-distance", dest="max_distance", type="int", default=20, metavar="INT",
+                        help="Maximal distance between duplicates edge. [%default]")
+    parser.add_option("-s", "--strand-sense", dest="strand_sense", action="store_true", default=False, 
+                      help="")
+    parser.add_option("-r", "--read-matrix", dest="read_matrix", metavar="PATH", 
+                      help="")
+    parser.add_option("-g", "--group-matrix", dest="group_matrix", metavar="PATH", 
+                      help="")
+    
+    options, args = parser.parse_args(args)
+    if len(args) != 2:
+        parser.print_help()
+        exit(1)
+    inbam, outbam = args
+    
+    run_pipeline(inbam=inbam, 
+                 outbam=outbam, 
+                 diff=options.max_distance, 
+                 strand=options.strand_sense, 
+                 f_read=options.read_matrix, 
+                 f_group=options.group_matrix)

@@ -1,4 +1,5 @@
 import pysam
+from collections import defaultdict
 from pyBioInfo.Utils import SegmentTools
 
 def infer_library_layout(obj):
@@ -128,16 +129,120 @@ class BaseMatrix(object):
     def get_score(self):
         pass
 
+    @classmethod
+    def parse_detail(cls, s):
+        detail = []
+        if s != ".":
+            for cell in s.split(";"):
+                d = defaultdict(int)
+                for item in cell.split(","):
+                    base, count = item.split(":")
+                    count = int(count)
+                    d[base] = count
+                detail.append(d)
+        return detail
 
-class PairedBaseMatrix(object):
+    @classmethod
+    def get_case(cls, detail):
+        case = 6
+        ncell_1, ncell_2 = 0, 0
+        for base_counter in detail:
+            depth = sum(base_counter.values())
+            if depth == 1:
+                ncell_1 += 1
+            elif depth >= 2:
+                ncell_2 += 1
+            else:
+                assert False
+        if ncell_2 == 0:
+            if ncell_1 == 0:
+                case = 6
+            elif ncell_1 == 1:
+                case = 5
+            else:
+                case = 4
+        elif ncell_2 == 1:
+            if ncell_1 == 0:
+                case = 3
+            else:
+                case = 2
+        elif ncell_2 >= 2:
+            case = 1
+        return case
+            
+    @classmethod
+    def get_confidence(cls, base, detail, case):
+        conf = False
+        if case == 1:
+            v1 = 0
+            v2 = 0
+            for cell_base_counter in detail:
+                depth = sum(cell_base_counter.values())
+                if depth >= 2:
+                    v1 += 1
+                    if cell_base_counter[base] >= depth * 0.75:
+                        v2 += 1
+            conf = v2 >= v1 * 0.75
+        elif case == 2:
+            v1 = 2
+            v2 = 0
+            d_1 = defaultdict(int)
+            for cell_base_counter in detail:
+                depth = sum(cell_base_counter.values())
+                if depth >= 2:
+                    if cell_base_counter[base] >= depth * 0.75:
+                        v2 += 1
+                elif depth == 1:
+                    for k, v in cell_base_counter.items():
+                        d_1[k] += v
+            if d_1[base] >= sum(d_1.values()) * 0.75:
+                v2 += 1
+            conf = (sum(d_1.values()) >= 2) and (v2 >= v1 * 0.75)
+        elif case == 3:
+            v1 = 1
+            v2 = 0
+            for cell_base_counter in detail:
+                depth = sum(cell_base_counter.values())
+                if depth >= 2:
+                    if cell_base_counter[base] >= depth * 0.75 and cell_base_counter[base] >= 4:
+                        v2 += 1
+            conf = v2 >= v1 * 0.75
+        elif case == 4:
+            d_1 = defaultdict(int)
+            for cell_base_counter in detail:
+                for k, v in cell_base_counter.items():
+                    d_1[k] += v
+            conf = d_1[base] >= sum(d_1.values()) * 0.75
+        elif case == 5:
+            cell_base_counter = detail[0]
+            conf = cell_base_counter[base] >= sum(cell_base_counter.values()) * 0.75
+        elif case == 6:
+            conf = False
+        else:
+            assert False
+        return conf
+
+
+class BaseMatrix2(BaseMatrix):
     def __init__(self):
         self.pos = None # position
         self.ref = None # reference base
-        self.ref1 = None # paternal allele
-        self.ref2 = None # maternal allele
+        self.pat = None # paternal allele
+        self.mat = None # maternal allele
         self.conf = None # is high confidence
         self.allele1 = None
         self.allele2 = None
-        self.details1 = None
-        self.details2 = None
+        self.detail1 = None
+        self.detail2 = None
         # pos, ref, base_pat, base_mat, hc, base1, base2, s1, s2
+
+    @classmethod
+    def parse_line(cls, line):
+        row = line[:-1].split("\t")
+        row[0] = int(row[0])
+        for c in [2, 3]: # PATMAT
+            if row[c] == ".":
+                row[c] = row[1]
+        for c in [7, 8]: # Detail
+            row[c] = cls.parse_detail(row[c])
+        return row

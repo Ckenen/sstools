@@ -20,7 +20,7 @@ from pyBioInfo.Utils import ShiftLoader
 
 usage = """
 
-    sstools FetchWCRegion [options] <config.txt> <outdir>
+    sstools FetchWCRegion [options] <input.bam> <outdir>
 """
 
 
@@ -49,8 +49,8 @@ class FetchWCRegion(object):
         reads = dict()
         with pysam.AlignmentFile(bamfile) as f:
             for chrom in f.references:
-                if re.match("^chr([0-9]+|[XY])$", chrom) is None:
-                    continue
+                # if re.match("^chr([0-9]+|[XY])$", chrom) is None:
+                #     continue
                 length = f.get_reference_length(chrom)
                 chroms.append(chrom)
                 lengths[chrom] = length
@@ -64,7 +64,9 @@ class FetchWCRegion(object):
                     end = segment.reference_end
                     strand = "-" if segment.is_reverse else "+"
                     read = GRange(chrom=chrom, start=start, end=end, strand=strand)
-                    read.parental = segment.get_tag("XP")
+                    read.parental = "U"
+                    if segment.has_tag("XP"):
+                        read.parental = segment.get_tag("XP")
                     read.duplicate_set_name = segment.get_tag("DN")
                     reads1.append(read)
                 reads[chrom] = reads1

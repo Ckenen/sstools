@@ -1,14 +1,10 @@
 #!/usr/bin/env python
 import sys
 import os
-from sstools.commands.filter_bam import FilterBam
-from sstools.commands.mark_haplotype import MarkHaplotype
-from sstools.commands.mark_duplicate import MarkDuplicate
-from sstools.commands.mark_region import MarkRegion
-from sstools.commands.stat_genomic_coverage import StatGenomicCoverage
+
+from sstools.commands.benchmark_snp import benchmark_snp
 from sstools.commands.stat_duplicate import StatDuplicate
 from sstools.commands.calculate_cwr import CalculateCWR
-from sstools.commands.stat_bin_read import StatBinRead
 from sstools.commands.stat_cell_haplotype import StatCellHaplotype
 from sstools.commands.pileup import Pileup
 from sstools.commands.cell_stats import CellStats
@@ -16,7 +12,7 @@ from sstools.commands.fetch_cc_regions import FetchCCRegion
 from sstools.commands.make_cc_composite import MakeCCComposite
 from sstools.commands.call_inversion import CallInversion
 from sstools.commands.fetch_wc_regions import FetchWCRegion
-from sstools.commands.stat_mapped_length import StatMappedLen
+from sstools.commands.downsample_bam import downsample_bam
 
 usage = """
 Tools for Strand-seq analysis.
@@ -24,24 +20,39 @@ Tools for Strand-seq analysis.
 Usage: %s <command> [options]
 
 Commands:
-    -- Developed
+    -- Post-mapping processing
        FilterBam        Filter bam file for Strand-seq.
        MarkDuplicate    Mark duplicates for Strand-seq.
        MarkRegion       Mark regions, such as whitelist or blacklist.
        MarkHaplotype    Mark the parental for each read according to provided HET SNVs.
-       StatGenomicCov   Statistic genomic coverage.
+       
+    -- Statistic
+       StatLength       Analysis fragment length.
+       StatGC           Analysis fragment GC content.
+       StatBackground   Estimate background.
+       StatCoverage     Calculate genomic coverage.
+       StatDepth        Calculate genome depth.
+       
        StatDuplicate    Statistic PCR duplicate.
-       CalculateCWR     Calculate Crick/Watson ratio.
-       StatBinRead      Statistic read count for each bin and plot barplot.
-       StatCellHap      Statistic single-cell haplotype precision.
-       Pileup           Pileup base matrix.
        CellStats        Report GC content, sequencing depth, background, spikiness, genomic coverage.
+       
+    -- Developed
+       
+       StatBinRead      Calculate bin read count.
+       PlotBinRead      Plot bin read count.
+       CalculateCWR     Calculate Crick/Watson ratio.
+       
+       StatCellHap      Statistic single-cell haplotype precision.
+       
+       Pileup           Pileup base matrix.
        FetchCCRegion
        MakeCCComposite
        CallInversion
        FetchWCRegion
+       BenchmarkSNP     Benchmark of SNPs.
+       DownsamplBam     Downsample BAM file.   
 
-    -- Developing
+    -- Under developing
        
     -- Round 1 assembly
 
@@ -52,33 +63,82 @@ Commands:
        SplitHaplotype
        MakeBaseMatrix
        MergeBaseMatrix
-       
-
 """ % os.path.basename(__file__)
 
 def main():
-    if len(sys.argv) == 1:
+    if len(sys.argv) <= 1:
         print("Error: please provide command.")
         print(usage)
         exit(1)
         
+    assert os.path.basename(sys.argv[0]) == "sstools"
     command = sys.argv[1]
+    args = sys.argv[2:]
+    functions = dict()
+    
+    # Post-mapping processing
+    
+    from sstools.commands.filter_bam import filter_bam
+    functions["FilterBam"] = filter_bam
+    from sstools.commands.mark_duplicate import mark_duplicate
+    functions["MarkDuplicate"] = mark_duplicate
+    from sstools.commands.mark_region import mark_region
+    functions["MarkRegion"] = mark_region
+    from sstools.commands.mark_haplotype import mark_haplotype
+    functions["MarkHaplotype"] = mark_haplotype
+    
+    # Statistic
+    
+    from sstools.commands.stat_length import stat_length
+    functions["StatLength"] = stat_length
+    from sstools.commands.stat_gc import stat_gc
+    functions["StatGC"] = stat_gc
+    from sstools.commands.stat_gc_density import stat_gc_density
+    functions["StatGCDensity"] = stat_gc_density
+    from sstools.commands.stat_background import stat_background
+    functions["StatBackground"] = stat_background
+    from sstools.commands.stat_spikiness import stat_spikiness
+    functions["StatSpikiness"] = stat_spikiness
+    from sstools.commands.stat_depth import stat_depth
+    functions["StatDepth"] = stat_depth
+    from sstools.commands.stat_coverage import stat_coverage
+    functions["StatCoverage"] = stat_coverage
+    
+    # Bin reads
+    
+    from sstools.commands.stat_bin_read import stat_bin_read
+    functions["StatBinRead"] = stat_bin_read
+    from sstools.commands.plot_bin_read import plot_bin_read
+    functions["PlotBinRead"] = plot_bin_read
+    
+    if command in functions:
+        functions[command](args)
+        exit(0)
+    else:
+        print("Error: unknown command %s." % command)
+        print(usage)
+        exit(1)
+    
     if command == "FilterBam":
-        FilterBam()
-    elif command == "MarkHaplotype":
-        MarkHaplotype()
+        filter_bam(args)
     elif command == "MarkDuplicate":
-        MarkDuplicate()
+        mark_duplicate(args)
     elif command == "MarkRegion":
-        MarkRegion()
-    elif command == "StatGenomicCov":
-        StatGenomicCoverage()
+        mark_region(args)
+    elif command == "MarkHaplotype":
+        mark_haplotype(args)
+    elif command == "StatBinRead":
+        stat_bin_read(sys.argv[2:])
+    elif command == "PlotBinRead":
+        plot_bin_read(sys.argv[2:])
     elif command == "StatDuplicate":
         StatDuplicate()
     elif command == "CalculateCWR":
         CalculateCWR()
-    elif command == "StatBinRead":
-        StatBinRead()
+    elif command == "BenchmarkSNP":
+        benchmark_snp(sys.argv[2:])
+    elif command == "DownsampleBam":
+        downsample_bam(sys.argv[2:])
     elif command == "StatCellHap":
         StatCellHaplotype()
     elif command == "Pileup":
@@ -93,8 +153,6 @@ def main():
         CallInversion()
     elif command == "FetchWCRegion":
         FetchWCRegion()
-    elif command == "StatMappedLen":
-        StatMappedLen()
     else:
         print("Error: unknown command %s." % command)
         print(usage)
