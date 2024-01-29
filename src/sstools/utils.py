@@ -145,28 +145,28 @@ class BaseMatrix(object):
     @classmethod
     def get_case(cls, detail):
         case = 6
-        c1, c2 = 0, 0
-        for d in detail:
-            depth = sum(d.values())
+        ncell_1, ncell_2 = 0, 0
+        for base_counter in detail:
+            depth = sum(base_counter.values())
             if depth == 1:
-                c1 += 1
+                ncell_1 += 1
             elif depth >= 2:
-                c2 += 1
+                ncell_2 += 1
             else:
                 assert False
-        if c2 == 0:
-            if c1 == 0:
+        if ncell_2 == 0:
+            if ncell_1 == 0:
                 case = 6
-            elif c1 == 1:
+            elif ncell_1 == 1:
                 case = 5
             else:
                 case = 4
-        elif c2 == 1:
-            if c1 == 0:
+        elif ncell_2 == 1:
+            if ncell_1 == 0:
                 case = 3
             else:
                 case = 2
-        elif c2 >= 2:
+        elif ncell_2 >= 2:
             case = 1
         return case
             
@@ -176,24 +176,24 @@ class BaseMatrix(object):
         if case == 1:
             v1 = 0
             v2 = 0
-            for d in detail:
-                depth = sum(d.values())
+            for cell_base_counter in detail:
+                depth = sum(cell_base_counter.values())
                 if depth >= 2:
                     v1 += 1
-                    if d[base] >= depth * 0.75:
+                    if cell_base_counter[base] >= depth * 0.75:
                         v2 += 1
             conf = v2 >= v1 * 0.75
         elif case == 2:
             v1 = 2
             v2 = 0
             d_1 = defaultdict(int)
-            for d in detail:
-                depth = sum(d.values())
+            for cell_base_counter in detail:
+                depth = sum(cell_base_counter.values())
                 if depth >= 2:
-                    if d[base] >= depth * 0.75:
+                    if cell_base_counter[base] >= depth * 0.75:
                         v2 += 1
                 elif depth == 1:
-                    for k, v in d.items():
+                    for k, v in cell_base_counter.items():
                         d_1[k] += v
             if d_1[base] >= sum(d_1.values()) * 0.75:
                 v2 += 1
@@ -201,21 +201,21 @@ class BaseMatrix(object):
         elif case == 3:
             v1 = 1
             v2 = 0
-            for d in detail:
-                depth = sum(d.values())
+            for cell_base_counter in detail:
+                depth = sum(cell_base_counter.values())
                 if depth >= 2:
-                    if d[base] >= depth * 0.75 and d[base] >= 4:
+                    if cell_base_counter[base] >= depth * 0.75 and cell_base_counter[base] >= 4:
                         v2 += 1
             conf = v2 >= v1 * 0.75
         elif case == 4:
             d_1 = defaultdict(int)
-            for d in detail:
-                for k, v in d.items():
+            for cell_base_counter in detail:
+                for k, v in cell_base_counter.items():
                     d_1[k] += v
             conf = d_1[base] >= sum(d_1.values()) * 0.75
         elif case == 5:
-            d = detail[0]
-            conf = d[base] >= sum(d.values()) * 0.75
+            cell_base_counter = detail[0]
+            conf = cell_base_counter[base] >= sum(cell_base_counter.values()) * 0.75
         elif case == 6:
             conf = False
         else:

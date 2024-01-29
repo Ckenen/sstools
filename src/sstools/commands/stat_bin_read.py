@@ -11,8 +11,11 @@ usage = """
     sstools StatBinRead [options] <input.bam> <outfile>
 """
 
+ANCHOR_START = 0
+ANCHOR_CENTER = 1
+ANCHOR_END = 2
 
-def worker(bamfile, chrom, width, rmdup, rmlc):
+def worker(bamfile, chrom, width, rmdup, rmlc, anchor):
     with pysam.AlignmentFile(bamfile) as f:
         length = f.get_reference_length(chrom)
         nbin = int(length / width)
@@ -44,7 +47,15 @@ def worker(bamfile, chrom, width, rmdup, rmlc):
             if s.has_tag("XP"):
                 parental = s.get_tag("XP")
                 
-            idx = int(start / width)
+            if anchor == ANCHOR_START:
+                a = start
+            elif anchor == ANCHOR_CENTER:
+                a = int((start + end) / 2)
+            elif anchor == ANCHOR_END:
+                a = end - 1
+            else:
+                assert False
+            idx = int(a / width)
             if strand == "+":
                 rows[idx][offset] += 1
                 if parental == "P":
@@ -66,12 +77,12 @@ def worker(bamfile, chrom, width, rmdup, rmlc):
         return df
 
 
-def run_pipeline(inbam, outfile, threads=1, width=1000000, rmdup=False, rmlc=False):
+def run_pipeline(inbam, outfile, threads=1, width=1000000, rmdup=False, rmlc=False, anchor=ANCHOR_START):
     results = []
     pool = mp.Pool(threads)
     with pysam.AlignmentFile(inbam) as f:
         for chrom in f.references:
-            args = (inbam, chrom, width, rmdup, rmlc)
+            args = (inbam, chrom, width, rmdup, rmlc, anchor)
             r = pool.apply_async(worker, args)
             results.append(r)
     pool.close()
@@ -92,6 +103,8 @@ def stat_bin_read(args):
                       help="")
     parser.add_option("-t", "--threads", dest="threads", type="int", default=1, metavar="INT", 
                       help="")
+    parser.add_option("-a", "--anchor", dest="anchor", type="int", default=ANCHOR_START, metavar="INT", 
+                      help="Anchor to assign bin. (0: start, 1: center, 2: end) [%default]")
     options, args = parser.parse_args(args)
     if len(args) != 2:
         parser.print_help()
@@ -103,7 +116,8 @@ def stat_bin_read(args):
         threads=options.threads, 
         width=options.width, 
         rmdup=options.rmdup, 
-        rmlc=options.rmlc
+        rmlc=options.rmlc,
+        anchor=options.anchor
     )
 
     

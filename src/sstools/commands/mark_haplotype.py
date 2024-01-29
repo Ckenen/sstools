@@ -59,9 +59,10 @@ def load_phased_snps(f, chrom):
 
 def get_parentals(segment, snps):
     parentals = []
+    parsed_cigar = SegmentTools.parse_cigar(segment)
     if len(snps) > 0:
         for snp in snps:
-            base = SegmentTools.get_query_base(segment, snp.start)
+            base = SegmentTools.get_query_base(segment, snp.start, parsed_cigar)
             if base is None:
                 continue
             if base == "-":

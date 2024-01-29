@@ -4,7 +4,6 @@ import optparse
 import re
 from collections import defaultdict
 import pysam
-from sstools import utils
 from pyBioInfo.Utils import SegmentTools
 
 usage = """
@@ -108,8 +107,7 @@ def run_pipeline_for_single_end(inbam, outbam,
             fw.write(s)
 
 
-def filter_bam(args):
-    
+def filter_bam(args=None):
     usage = "sstools FilterBam [options] <input.bam> <output.bam>"
     parser = optparse.OptionParser(usage=usage)
         
@@ -143,7 +141,9 @@ def filter_bam(args):
     parser.add_option_group(group)
                 
     options, args = parser.parse_args(args)
-    # print(options, args)
+    print(options, args)
+    exit(0)
+    
     if len(args) != 2:
         parser.print_help()
         exit(1)
@@ -167,4 +167,4 @@ def filter_bam(args):
         
         
 if __name__ == "__main__":
-    filter_bam(sys.argv[1:])
+    filter_bam()
