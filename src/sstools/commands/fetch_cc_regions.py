@@ -1,9 +1,11 @@
-#!/usr/bin/env python#!/usr/bin/env python
+#!/usr/bin/env python
 import sys
 import os
-import json
 import optparse
-import multiprocessing
+import glob
+import multiprocessing as mp
+from collections import OrderedDict
+import subprocess
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -13,188 +15,213 @@ matplotlib.rcParams["font.family"] = "arial"
 import matplotlib.pyplot as plt
 
 
-usage = """
+def load_config(configfile):
+    config = OrderedDict()
+    with open(configfile) as f:
+        for line in f:
+            sample, path = line.strip("\n").split("\t")[:2]
+            assert os.path.exists(path)
+            config[sample] = path
+    return config
 
-    sstools FetchCCRegion [options] <config.txt> <outdir>
-"""
+
+def load_read_counts(config):
+    sample_counts = dict()
+    for sample, path in config.items():
+        sample_counts[sample] = pd.read_csv(path, sep="\t")
+    return sample_counts
 
 
-class FetchCCRegion(object):
-    def __init__(self):
-        self.txtfile = None
-        self.outdir = None
-        self.init_parameters()
-        self.execute()
+def get_bin_width(data):
+    width = None
+    for cell, d in data.items():
+        for chrom, d1 in d.groupby(by="Chrom"):
+            if len(d1) > 1:
+                width = d["Width"].values[0]
+                break
+        if width is not None:
+            break
+    assert width is not None
+    return width
 
-    def init_parameters(self):
-        parser = optparse.OptionParser(usage=usage)
-        parser.add_option("-p", "--processors", dest="threads", type="int", default=1,
-                          help="Processors to run in parallel. [%default]")
-        options, args = parser.parse_args(sys.argv[2:])
-        if len(args) != 2:
-            parser.print_help()
-            exit(1)
-        self.options = options
-        self.txtfile = args[0]
-        self.outdir = args[1]
 
-    @classmethod
-    def get_status(cls, v):
-        if v > 2:
-            return 1
-        elif v < -2:
-            return -1
+def get_chrom_lengths(data):
+    info = None
+    for sample, d in data.items():
+        tmp = dict()
+        for chrom, d1 in d.groupby(by="Chrom"):
+            length = max(d1["End"])
+            tmp[chrom] = length
+        if info is None:
+            info = tmp
         else:
-            return 0
+            assert len(tmp) == len(info)
+            for k in info.keys():
+                assert info[k] == tmp[k]
+    return info
 
-    @classmethod
-    def cal_bin_log2_cwr(cls, v1, v2, lim=4):
-        if v1 == 0:
-            if v2 == 0:
-                return 0
+
+def make_proportion_matrix(Mc, Mw, min_reads=2):
+    rows = []
+    for i in range(len(Mc)):
+        crick = Mc.iloc[i].values
+        watson = Mw.iloc[i].values
+        ps = []
+        for c, w in zip(crick, watson):
+            if c <= min_reads and w <= min_reads:
+                p = 0.5
             else:
-                return -lim
+                p = c / (c + w)
+            ps.append(p)
+        rows.append(ps)
+    Mp = pd.DataFrame(rows, index=Mc.index, columns=Mc.columns)
+    return Mp
+
+
+def make_matrix(sample_counts, chrom):
+    cells = list(sorted(sample_counts.keys()))
+    rows_c, rows_w = [], []
+    for cell in cells:
+        d = sample_counts[cell]
+        d = d[d["Chrom"] == chrom]
+        rows_c.append(d["Crick"].values)
+        rows_w.append(d["Watson"].values)
+    Mc = pd.DataFrame(rows_c, index=cells)
+    Mw = pd.DataFrame(rows_w, index=cells)
+    Mp = make_proportion_matrix(Mc, Mw)
+    return Mc, Mw, Mp
+
+
+def predict_chrom_pattern(Mc, Mw):
+    data = dict()
+    for i, cell in enumerate(Mc.index):
+        vs1 = Mc.iloc[i].values
+        vs2 = Mw.iloc[i].values
+        s1, s2 = sum(vs1), sum(vs2)
+        if s1 > s2:
+            pattern = "CC"
+        elif s1 < s2:
+            pattern = "WW"
         else:
-            if v2 == 0:
-                return lim
+            pattern = "WC"
+        data[cell] = pattern
+    return data
+
+
+def cluster_matrix(Mc, Mw, Mp, outfile=None):
+    ret = sns.clustermap(Mp, cmap="bwr", col_cluster=False, figsize=(10, 10))
+    ret.fig.tight_layout()
+    if outfile:
+        ret.fig.savefig(outfile, dpi=300)
+    samples = ret.data2d.index
+    return Mc.loc[samples], Mw.loc[samples], Mp.loc[samples]
+
+
+def filter_matrix(Mc, Mw, Mp, min_reads=100, min_fold_change=4):
+    samples = []
+    for i, sample in enumerate(Mc.index):
+        vs1 = Mc.iloc[i].values
+        vs2 = Mw.iloc[i].values
+        s1, s2 = sum(vs1), sum(vs2)
+        if s1 + s2 >= min_reads:
+            if s1 >= s2 * min_fold_change or s2 >= s1 * min_fold_change:
+                samples.append(sample)
+    return Mc.loc[samples], Mw.loc[samples], Mp.loc[samples]
+                   
+
+def reverse_matrix(Mc, Mw, Mp):
+    rows_c, rows_w = [], []
+    for i in range(len(Mc)):
+        vs1 = Mc.iloc[i].values
+        vs2 = Mw.iloc[i].values
+        if sum(vs1) < sum(vs2):
+            vs1, vs2 = vs2, vs1
+        rows_c.append(vs1)
+        rows_w.append(vs2)
+    m1 = pd.DataFrame(rows_c, index=Mc.index, columns=Mc.columns)
+    m2 = pd.DataFrame(rows_w, index=Mc.index, columns=Mc.columns)
+    m3 = make_proportion_matrix(m1, m2)
+    return m1, m2, m3
+
+
+def plot_heatmap(M, outfile):
+    plt.figure(figsize=(6, 10))
+    sns.heatmap(M, cmap="bwr")
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    plt.close()
+
+
+def get_expected_proportions(Mp):
+    return Mp.mean(axis=0)
+
+ 
+def mask_matrix(Mc, Mw, Mp, expected_proportions):
+    Mm = np.zeros(Mc.shape, dtype=np.int)
+    for i, sample in enumerate(Mc.index):
+        cricks = Mc.iloc[i]
+        watsons = Mw.iloc[i]
+        proportions = Mp.iloc[i]
+        assert len(proportions) == len(expected_proportions)
+        nbin = len(cricks)
+
+        status = np.zeros(nbin)
+        for j in np.arange(nbin):
+            c, w, p, ep = cricks[j], watsons[j], proportions[j], expected_proportions[j]
+            if abs(p - ep) < 0.2:
+                s = 1
+            elif c + w < 10:
+                s = 1
             else:
-                v = np.log2(np.divide(v1, v2))
-                if v > 4:
-                    v = 4
-                elif v < -4:
-                    v = -4
-                return v
-
-    @classmethod
-    def make_data_frame(cls, data, chrom, outdir):
-        cells = list(sorted(data.keys()))
-        rows_crick = []
-        rows_watson = []
-        rows_cwr = []
-        for cell in cells:
-            cwr_list = []
-            for item in data[cell]["Detail"]:
-                if item["Chrom"] == chrom:
-                    counts1, counts2 = item["Bin_Values"]
-                    rows_crick.append(counts1)
-                    rows_watson.append(counts2)
-                    log2cwr = np.log2(np.divide(sum(counts1), sum(counts2)))
-                    for c1, c2 in zip(counts1, counts2):
-                        v = cls.cal_bin_log2_cwr(c1, c2, lim=4)
-                        if log2cwr < 0:
-                            v = v * -1
-                        cwr_list.append(v)
-                    break
-
-            if len(cwr_list) == 0:
-                # print(chrom)
-                assert False
-            rows_cwr.append(cwr_list)
-        crick = pd.DataFrame(rows_crick)
-        crick.index = cells
-        crick.index.name = "Cell"
-        crick.to_csv(outdir + "/crick.raw.tsv", sep="\t")
-        watson = pd.DataFrame(rows_watson)
-        watson.index = cells
-        watson.index.name = "Cell"
-        watson.to_csv(outdir + "/watson.raw.tsv", sep="\t")
-        dat = pd.DataFrame(rows_cwr)
-        dat.index = cells
-        dat.index.name = "Cell"
-        dat.to_csv(outdir + "/cwr.raw.tsv", sep="\t")
-        return crick, watson, dat
-
-    @classmethod
-    def filter_and_cluster_cells(cls, crick, watson, dat, outdir):
-        flags = np.log2(crick.sum(axis=1) / watson.sum(axis=1)).abs() > 2
-        crick, watson, dat = crick[flags], watson[flags], dat[flags]
-
-        ret = sns.clustermap(dat, cmap="bwr", figsize=(8, 10), col_cluster=False)
-        plt.savefig(outdir + "/clustermap.pdf", dpi=300)
-        plt.close()
-        dat = ret.data2d
-        crick = crick.loc[dat.index]
-        watson = watson.loc[dat.index]
-        dat.to_csv(outdir + "/cwr.filtered.tsv", sep="\t")
-        crick.to_csv(outdir + "/crick.filtered.tsv", sep="\t")
-        watson.to_csv(outdir + "/watson.filtered.tsv", sep="\t")
-        # Heatmap
-        plt.figure(figsize=(10, 10))
-        sns.heatmap(dat, cmap="bwr", vmin=-4, vmax=4, cbar_kws={"label": "Log2CWR"})
-        plt.xlabel("Bins")
-        plt.ylabel("Cells (%d)" % len(dat))
-        plt.tight_layout()
-        plt.savefig(outdir + "/heatmap.pdf", dpi=300)
-        plt.close()
-
-        return crick, watson, dat
-
-    @classmethod
-    def get_bin_width(cls, data):
-        for d in data.values():
-            return d["Detail"][0]["Bin_Width"]
-
-    @classmethod
-    def get_cc_regions(cls, crick, watson, dat, chrom, bin_width, outdir):
-        means = dat.mean(axis=0)
-        regions = []
-        masks = []
-        for row_idx in range(len(dat)):
-            c = crick.iloc[row_idx].sum()
-            w = watson.iloc[row_idx].sum()
-            chrom_log2cwr = np.log2(np.divide(c, w))
-            # chrom_status = "CC" if chrom_log2cwr > 0 else "WW"
-
-            values = dat.iloc[row_idx]
-            # status = list(map(cls.get_status, dat.iloc[row_idx]))
-            status = [] # 1: same, 0: diff
-            for bin_idx, (m, v) in enumerate(zip(means, values)):
-                if abs(v - m) < 2:
-                    status.append(1)
+                s = 0
+            status[j] = s
+        
+        array = [] # [start, end]
+        start = None
+        for j, v in enumerate(status):
+            if v == 0:
+                if start is None:
+                    continue
                 else:
-                    c = crick.values[row_idx][bin_idx]
-                    w = watson.values[row_idx][bin_idx]
-                    if c + w < 10:
-                        status.append(1)
-                    else:
-                        status.append(0)
-            array = [] # [start, end]
-            start = None
-            for j, v in enumerate(status):
-                if v == 0:
-                    if start is None:
-                        continue
-                    else:
-                        array.append([start, j])
-                        start = None
+                    array.append([start, j])
+                    start = None
+            else:
+                if start is None:
+                    start = j
                 else:
-                    if start is None:
-                        start = j
-                    else:
-                        continue
-            if start is not None:
-                array.append([start, len(status)])
+                    continue
+        if start is not None:
+            array.append([start, len(status)])
                 
+        
+        if True:
             # Filter too short
             array = list(filter(lambda r: r[1] - r[0] >= 2, array))
+            
+        if True:
             # Fill small gap
             j = 0
             while j < len(array) - 1:
-                if array[j + 1][0] - array[j][1] < max(int(len(dat.columns) * 0.03), 2):
+                if array[j + 1][0] - array[j][1] < max(int(nbin * 0.03), 2):
                     array[j][1] = array[j + 1][1]
                     array.pop(j + 1)
                 else:
                     j += 1
+                    
+        if True:
             # Fill edge
             if len(array) > 0:
                 if array[0][0] <= 2:
                     array[0][0] = 0
                 if array[-1][1] + 2 >= len(status):
                     array[-1][1] = len(status)
-            # Keep longest region
-            if len(array) > 1:
-                array = list(sorted(array, key=lambda r: r[1] - r[0]))
-                array = array[-1:]
+                    
+        # Keep longest region
+        if len(array) > 1:
+            array = list(sorted(array, key=lambda r: r[1] - r[0]))
+            array = array[-1:]
+            
+        if True:
             # Trim bound
             new_regions = []
             for start, end in array:
@@ -206,106 +233,164 @@ class FetchCCRegion(object):
                     if sum(status[start:end]) / (end - start) >= 0.9:
                         new_regions.append([start, end])
             array = new_regions
-            # Report
-            for r in array:
-                regions.append([chrom, r[0] * bin_width, r[1] * bin_width, \
-                    dat.index.values[row_idx], ".", "+" if chrom_log2cwr > 0 else "-"])
-                
-            # New status
-            new_status = np.zeros(len(status))
-            for r in array:
-                for pos in np.arange(r[0], r[1]):
-                    new_status[pos] = 1
-            masks.append(new_status)
-        masks = pd.DataFrame(masks)
-        masks.index = dat.index
-        plt.figure(figsize=(10, 10))
-        sns.heatmap(masks, cmap="bwr", vmin=0, vmax=1)
-        plt.tight_layout()
-        plt.savefig(outdir + "/heatmap.cc.pdf", dpi=300)
+            
+        for r in array:
+            for j in range(r[0], r[1]):
+                Mm[i][j] = 1
+    
+    Mm = pd.DataFrame(Mm, index=Mc.index, columns=Mc.columns)
+    return Mm
 
-        with open(outdir + "/cc_regions.bed", "w+") as fw:
-            for row in regions:
-                line = "\t".join(map(str, row))
-                fw.write(line + "\n")
 
-        return masks, regions
-
-    @classmethod
-    def barplot(cls, crick, watson, masks, outdir):
-        ncol = 4
-        nrow = int(len(masks) / ncol)
-        if len(masks) % ncol > 0:
-            nrow += 1
-        fig, axs = plt.subplots(nrow, ncol, figsize=(ncol * 3, nrow * 1), sharex=True)
-        for i in range(len(masks)):
-            ax = axs[int(i / ncol)][i % ncol]
-            plt.sca(ax)
-            plt.title(masks.index.values[i])
-            counts1 = crick.iloc[i]
-            counts2 = watson.iloc[i]
-            status = masks.iloc[i]
-            if sum(counts1) < sum(counts2):
-                counts1, counts2 = counts2, counts1
-            colors1 = []
-            colors2 = []
-            for s in status:
-                if s == 0:
-                    colors1.append("red")
-                    colors2.append("red")
-                else:
-                    colors1.append("C0")
-                    colors2.append("C1")
-            xs = np.arange(len(counts1))
-            plt.bar(xs, counts1, width=1, color=colors1)
-            plt.bar(xs, -counts2, width=1, color=colors2)
-        plt.tight_layout()
-        plt.savefig(outdir + "/cell_cc_regions.pdf", dpi=300)
-        plt.close()
-
-    @classmethod
-    def process_chromosome(cls, data, chrom, outdir):
-        outdir = os.path.join(outdir, chrom)
-        if not os.path.exists(outdir):
-            os.mkdir(outdir)
-        bin_width = cls.get_bin_width(data)
-        crick, watson, dat = cls.make_data_frame(data, chrom, outdir)
-        crick, watson, dat = cls.filter_and_cluster_cells(crick, watson, dat, outdir)
-        masks, regions = cls.get_cc_regions(crick, watson, dat, chrom, bin_width, outdir)
-        cls.barplot(crick, watson, masks, outdir)
-        return regions
-
-    def execute(self):
-        if not os.path.exists(self.outdir):
-            os.mkdir(self.outdir)
-        config = json.load(open(self.txtfile))
-        data = dict()
-        for cell in config["Cells"]:
-            run = cell.split(".")[0]
-            path = "results/mapping/mark_parental/%s/%s.stats.json" % (run, cell)
-            data[cell] = json.load(open(path))
-
-        pool = None
-        if self.options.threads > 1:
-            pool = multiprocessing.Pool(self.options.threads)
-        results = []
-        for chrom in config["Chroms"]:
-            # if chrom != "chrX":
-            #     continue
-            args = (data, chrom, self.outdir)
-            if pool is None:
-                r = self.process_chromosome(*args)
+def plot_bin_reads(Mc, Mw, Mm, outfile):
+    ncol = 4
+    nrow = int(len(Mm) / ncol)
+    if len(Mm) % ncol > 0:
+        nrow += 1
+    fig, axs = plt.subplots(nrow, ncol, figsize=(ncol * 3, nrow * 1), sharex=True)
+    for i in range(len(Mm)):
+        ax = axs[int(i / ncol)][i % ncol]
+        plt.sca(ax)
+        plt.title(Mm.index.values[i])
+        counts1 = Mc.iloc[i]
+        counts2 = Mw.iloc[i]
+        status = Mm.iloc[i]
+        if sum(counts1) < sum(counts2):
+            counts1, counts2 = counts2, counts1
+        colors1 = []
+        colors2 = []
+        for s in status:
+            if s == 0:
+                colors1.append("red")
+                colors2.append("red")
             else:
-                r = pool.apply_async(self.process_chromosome, args)
-            results.append(r)
-            # break
-        if pool is not None:
-            pool.close()
-            pool.join()
-            results = [r.get() for r in results]
+                colors1.append("C0")
+                colors2.append("C1")
+        xs = np.arange(len(counts1))
+        plt.bar(xs, counts1, width=1, color=colors1)
+        plt.bar(xs, -counts2, width=1, color=colors2)
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    plt.close()
+
+
+def report_cc_regions(Mm, chrom, length, bin_width, patterns):
+    regions = []
+    for i, sample in enumerate(Mm.index):
+        status = Mm.values[i,:]
+        j1 = None
+        array = []
+        for j, s in enumerate(status):
+            if s == 0:
+                if j1 is None:
+                    continue
+                else:
+                    array.append([j1, j])
+                    j1 = None
+            else:
+                if j1 is None:
+                    j1 = j
+                else:
+                    continue
+        if j1 is not None:
+            array.append([j1, len(status)])
+        for j1, j2 in array:
+            start = j1 * bin_width
+            end = min(j2 * bin_width, length)
+            r = [chrom, start, end, sample, ".", "+" if patterns[sample] == "CC" else "-"]
+            regions.append(r)
+    return regions
+
+
+def process_chromosome(sample_counts, chrom, outdir):
+    bin_width = get_bin_width(sample_counts)
+    chrom_lengths = get_chrom_lengths(sample_counts)
+    length = chrom_lengths[chrom]
+
+    if length < 10000000:
+        sys.stderr.write("%s shorter than 10,000,000.\n" % chrom)
+        return None
+
+    chrom_outdir = os.path.join(outdir, chrom)
+    if not os.path.exists(chrom_outdir):
+        os.mkdir(chrom_outdir)
+
+    Mc, Mw, Mp = make_matrix(sample_counts, chrom)
+    Mc.to_csv(os.path.join(chrom_outdir, "matrix_of_crick.raw.tsv"), sep="\t")
+    Mw.to_csv(os.path.join(chrom_outdir, "matrix_of_watson.raw.tsv"), sep="\t")
+    Mp.to_csv(os.path.join(chrom_outdir, "matrix_of_crick_proportion.raw.tsv"), sep="\t")
+    plot_heatmap(Mp, os.path.join(chrom_outdir, "heatmap_of_crick_proportion.raw.pdf"))
+    
+    patterns = predict_chrom_pattern(Mc, Mw)
+
+    Mc, Mw, Mp = cluster_matrix(Mc, Mw, Mp, os.path.join(chrom_outdir, "clustermap.pdf"))
+    Mc.to_csv(os.path.join(chrom_outdir, "matrix_of_crick.clustered.tsv"), sep="\t")
+    Mw.to_csv(os.path.join(chrom_outdir, "matrix_of_watson.clustered.tsv"), sep="\t")
+    Mp.to_csv(os.path.join(chrom_outdir, "matrix_of_crick_proportion.clustered.tsv"), sep="\t")
+    plot_heatmap(Mp, os.path.join(chrom_outdir, "heatmap_of_crick_proportion.clustered.pdf"))
+
+    Mc, Mw, Mp = filter_matrix(Mc, Mw, Mp)
+    if len(Mc) < 10:
+        sys.stderr.write("%s less than 10 samples after filtering.\n" % chrom)
+    Mc.to_csv(os.path.join(chrom_outdir, "matrix_of_crick.filtered.tsv"), sep="\t")
+    Mw.to_csv(os.path.join(chrom_outdir, "matrix_of_watson.filtered.tsv"), sep="\t")
+    Mp.to_csv(os.path.join(chrom_outdir, "matrix_of_crick_proportion.filtered.tsv"), sep="\t")
+    plot_heatmap(Mp, os.path.join(chrom_outdir, "heatmap_of_crick_proportion.filtered.pdf"))
+
+    Mc, Mw, Mp = reverse_matrix(Mc, Mw, Mp)
+    Mc.to_csv(os.path.join(chrom_outdir, "matrix_of_crick.reversed.tsv"), sep="\t")
+    Mw.to_csv(os.path.join(chrom_outdir, "matrix_of_watson.reversed.tsv"), sep="\t")
+    Mp.to_csv(os.path.join(chrom_outdir, "matrix_of_crick_proportion.reversed.tsv"), sep="\t")
+    plot_heatmap(Mp, os.path.join(chrom_outdir, "heatmap_of_crick_proportion.reversed.pdf"))
+
+    expected_proportions = get_expected_proportions(Mp)
+
+    Mm = mask_matrix(Mc, Mw, Mp, expected_proportions)
+    plot_heatmap(Mm, os.path.join(chrom_outdir, "heatmap_of_masked.pdf"))
+    Mm.to_csv(os.path.join(chrom_outdir, "matrix_of_masked.tsv"), sep="\t")
+
+    plot_bin_reads(Mc, Mw, Mm, os.path.join(chrom_outdir, "cc_regions.pdf"))
+
+    regions = report_cc_regions(Mm, chrom, length, bin_width, patterns)
+
+    with open(os.path.join(chrom_outdir, "cc_regions.bed"), "w+") as fw:
+        for r in sorted(regions):
+            fw.write("\t".join(map(str, r)) + "\n")
+
+
+def fetch_cc_regions(args=None):
+    parser = optparse.OptionParser(usage="%prog [options] config.tsv outdir")
+    parser.add_option("-t", "--threads", dest="threads", type="int", default=1, metavar="INT", 
+                      help="")
+    options, args = parser.parse_args(args)
+    threads = options.threads
+    configfile, outdir = args
+
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
+    config = load_config(configfile)
+    sample_counts = load_read_counts(config)
+    chrom_lengths = get_chrom_lengths(sample_counts)
+    chroms = list(sorted(chrom_lengths.keys()))
+
+    pool = mp.Pool(threads)
+    for chrom in chroms:
+        params = (sample_counts, chrom, outdir)
+        pool.apply_async(process_chromosome, params)
+    pool.close()
+    pool.join()
+
+    # merge all CC regions
+    paths =  list(glob.glob("%s/*/cc_regions.bed" % outdir))
+    if len(paths) > 0:
+        cmd = "cat %s | sort -k1,1 -k2,2n > %s" % (" ".join(paths), os.path.join(outdir, "all_cc_regions.bed"))
+        subprocess.check_call(cmd, shell=True)
+    else:
+        with open(os.path.join(outdir, "all_cc_regions.bed"), "w+") as fw:
+            pass
+
+    print("All completed!")
         
-        with open(self.outdir + "/cc_regions.bed", "w+") as fw:
-            for regions in results:
-                for row in regions:
-                    line = "\t".join(map(str, row))
-                    fw.write(line + "\n")
+
+if __name__ == "__main__":
+    fetch_cc_regions()

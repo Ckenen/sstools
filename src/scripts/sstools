@@ -8,9 +8,6 @@ from sstools.commands.calculate_cwr import CalculateCWR
 from sstools.commands.stat_cell_haplotype import StatCellHaplotype
 from sstools.commands.pileup import Pileup
 from sstools.commands.cell_stats import CellStats
-from sstools.commands.fetch_cc_regions import FetchCCRegion
-from sstools.commands.make_cc_composite import MakeCCComposite
-from sstools.commands.call_inversion import CallInversion
 from sstools.commands.fetch_wc_regions import FetchWCRegion
 from sstools.commands.downsample_bam import downsample_bam
 
@@ -36,10 +33,15 @@ Commands:
        StatDuplicate    Statistic PCR duplicate.
        CellStats        Report GC content, sequencing depth, background, spikiness, genomic coverage.
        
-    -- Developed
-       
+    -- Counting bin reads
        StatBinRead      Calculate bin read count.
        PlotBinRead      Plot bin read count.
+       
+    -- Developed
+       
+       
+       
+       
        CalculateCWR     Calculate Crick/Watson ratio.
        
        StatCellHap      Statistic single-cell haplotype precision.
@@ -111,6 +113,22 @@ def main():
     from sstools.commands.plot_bin_read import plot_bin_read
     functions["PlotBinRead"] = plot_bin_read
     
+    # Inversions
+    
+    from sstools.commands.fetch_cc_regions import fetch_cc_regions
+    functions["FetchCCRegion"] = fetch_cc_regions
+    from sstools.commands.make_cc_composite import make_cc_composite
+    functions["MakeCCComposite"] = make_cc_composite
+    from sstools.commands.call_inversion import call_inversion
+    functions["CallInversion"] = call_inversion
+    
+    # Utilities
+    
+    from sstools.commands.quantify_sv import quantify_sv
+    functions["QuantifySV"] = quantify_sv
+    from sstools.commands.bam_to_bigwig import bam_to_bigwig
+    functions["BamToBigwig"] = bam_to_bigwig
+
     if command in functions:
         functions[command](args)
         exit(0)
@@ -145,12 +163,6 @@ def main():
         Pileup()
     elif command == "CellStats":
         CellStats()
-    elif command == "FetchCCRegion":
-        FetchCCRegion()
-    elif command == "MakeCCComposite":
-        MakeCCComposite()
-    elif command == "CallInversion":
-        CallInversion()
     elif command == "FetchWCRegion":
         FetchWCRegion()
     else:

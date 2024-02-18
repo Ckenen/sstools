@@ -1,97 +1,84 @@
 #!/usr/bin/env python#!/usr/bin/env python
 import sys
 import os
-import re
-import json
 import gzip
-from collections import Counter
 import optparse
-import multiprocessing
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import matplotlib
-matplotlib.use("Agg")
-matplotlib.rcParams["font.family"] = "arial"
-import matplotlib.pyplot as plt
+import multiprocessing as mp
 import pysam
-from sstools import utils
 
 
-usage = """
+def _load_bam_file_config(tsvfile):
+    bamfiles = dict()
+    for line in open(tsvfile):
+        sample, tsvfile = line.strip("\n").split("\t")[:2]
+        bamfiles[sample] = tsvfile
+    return bamfiles
 
-    sstools MakeCCComposite [options] <regions.bed.gz> <outdir>
-"""
+
+def _get_chromosomes(bedfile):
+    chroms = []
+    for line in gzip.open(bedfile, "rt"):
+        chrom = line.strip("\n").split("\t")[0]
+        chroms.append(chrom)
+    chroms = list(sorted(set(chroms)))
+    return chroms
 
 
-class MakeCCComposite(object):
-    def __init__(self):
-        self.infile = None
-        self.outdir = None
-        self.init_parameters()
-        self.execute()
+def _get_strand(segment, region_strand):
+    strand = "-" if segment.is_reverse else "+"
+    if region_strand == "-":
+        strand = "-" if strand == "+" else "+"
+    return strand
 
-    def init_parameters(self):
-        parser = optparse.OptionParser(usage=usage)
-        parser.add_option("-p", "--processors", dest="threads", type="int", default=1,
-                          help="Processors to run in parallel. [%default]")
-        options, args = parser.parse_args(sys.argv[2:])
-        if len(args) != 2:
-            parser.print_help()
-            exit(1)
-        self.options = options
-        self.infile = args[0]
-        self.outdir = args[1]
 
-    @classmethod
-    def process_chromosome(cls, infile, chrom, outfile):
-        with pysam.TabixFile(infile) as f, open(outfile, "w+") as fw:
+def _get_color(strand):
+    color = "0,0,0"
+    if strand == "+":
+        color = "107,137,138"
+    elif strand == "-":
+        color = "248,173,97"
+    return color
+
+
+def _worker(bedfile, chrom, bamfiles, outfile):
+        with pysam.TabixFile(bedfile) as f, open(outfile, "w+") as fw:
             for line in f.fetch(chrom):
-                chrom, start0, end0, cell, score0, strand0 = line.strip("\n").split("\t")
-                start0 = int(start0)
-                end0 = int(end0)
-                run = cell.split(".")[0]
-                bamfile = "../1_NanoStrandseq/results/mapping/mark_parental/%s/%s.bam" % (run, cell)
+                chrom, start_r, end_r, cell, score_r, strand_r = line.strip("\n").split("\t")
+                start_r = int(start_r)
+                end_r = int(end_r)
+                bamfile = bamfiles[cell]
                 with pysam.AlignmentFile(bamfile) as bam:
-                    for segment in bam.fetch(chrom, start0, end0):
+                    for segment in bam.fetch(chrom, start_r, end_r):
                         if segment.is_duplicate:
                             continue
                         start = segment.reference_start
                         end = segment.reference_end
                         score = segment.mapping_quality
-                        strand = "-" if segment.is_reverse else "+"
-                        if strand0 == "-":
-                            strand = "-" if strand == "+" else "+"
-                        color = "107,137,138"
-                        if strand == "-":
-                            color = "248,173,97"
-                        line = "\t".join(map(str, [chrom, start, end, cell, \
-                            score, strand, start, end, color]))
-                        fw.write(line + "\n")
+                        strand = _get_strand(segment, strand_r)
+                        color = _get_color(strand)
+                        row = [chrom, start, end, cell, score, strand, start, end, color]
+                        fw.write("\t".join(map(str, row)) + "\n")
         return outfile
 
-    def execute(self):
-        if not os.path.exists(self.outdir):
-            os.mkdir(self.outdir)
 
-        with gzip.open(self.infile, "rt") as f:
-            chroms = [line.strip("\n").split("\t")[0] for line in f]
-            chroms = list(sorted(set(chroms)))
-
-        pool = None
-        if self.options.threads > 1:
-            pool = multiprocessing.Pool(self.options.threads)
-        results = []
-        for chrom in chroms:
-            args = (self.infile, chrom, "%s/%s.bed" % (self.outdir, chrom))
-            if pool is None:
-                r = self.process_chromosome(*args)
-            else:
-                r = pool.apply_async(self.process_chromosome, args)
-            results.append(r)
-            # break
-        if pool is not None:
-            pool.close()
-            pool.join()
-            results = [r.get() for r in results]
+def make_cc_composite(args=None):
+    parser = optparse.OptionParser(usage="%prog [options] <regions.bed.gz> <bamlist.tsv> <outdir>")
+    parser.add_option("-t", "--threads", dest="threads", type="int", default=1,
+                      help="Threads to run in parallel. [%default]")
+    options, args = parser.parse_args(args)
+    threads = options.threads
+    bedfile, tsvfile, outdir = args
+    
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
         
+    bamfiles = _load_bam_file_config(tsvfile)
+    chroms = _get_chromosomes(bedfile)
+
+    pool = mp.Pool(threads)
+    for chrom in chroms:
+        params = (bedfile, chrom, bamfiles, os.path.join(outdir, "%s.bed" % chrom))
+        pool.apply_async(_worker, params)
+    pool.close()
+    pool.join()
+            
