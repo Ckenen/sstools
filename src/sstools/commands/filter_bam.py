@@ -5,6 +5,12 @@ from collections import defaultdict
 import pysam
 from pyBioInfo.Utils import SegmentTools
 
+def get_perc(n1, n2):
+    if n2 == 0:
+        return 0
+    else:
+        return n1 * 100 / n2
+
    
 def pipeline_pe(inbam, outbam, pattern, min_mapq):
     n_total = 0
@@ -59,14 +65,14 @@ def pipeline_pe(inbam, outbam, pattern, min_mapq):
         for s in SegmentTools.sort_segments(segments):
             fw.write(s)
     
-    print("Total:", n_total)
-    print("Unmapped:", n_unmapped)
-    print("InvalidSeqname:", n_seqname)
-    print("SecondaryMapped:", n_secondary)
-    print("UnProperPair:", n_proper_pair)
-    print("LowMapQuality:", n_mapq)
-    print("Other:", n_other)
-    print("Pass:", n_pass)
+    print("Total: %d" % n_total)
+    print("Unmapped: %d (%.2f%%)" % (n_unmapped, get_perc(n_unmapped, n_total)))
+    print("InvalidSeqname: %d (%.2f%%)" % (n_seqname, get_perc(n_seqname, n_total)))
+    print("SecondaryMapped: %d (%.2f%%)" % (n_secondary, get_perc(n_secondary, n_total)))
+    print("UnProperPair: %d (%.2f%%)" % (n_proper_pair, get_perc(n_proper_pair, n_total)))
+    print("LowMapQuality: %d (%.2f%%)" % (n_mapq, get_perc(n_mapq, n_total)))
+    print("Other: %d (%.2f%%)" % (n_other, get_perc(n_other, n_total)))
+    print("Pass: %d (%.2f%%)" % (n_pass, get_perc(n_pass, n_total)))
 
 def pipeline_se(inbam, outbam, pattern, mapq):
     n_total = 0
@@ -115,13 +121,13 @@ def pipeline_se(inbam, outbam, pattern, mapq):
         for s in SegmentTools.sort_segments(segments):
             fw.write(s)
 
-    print("Total:", n_total)
-    print("Unmapped:", n_unmapped)
-    print("InvalidSeqname:", n_seqname)
-    print("SecondaryMapped:", n_secondary)
-    print("LowMapQuality:", n_mapq)
-    print("Other:", n_other)
-    print("Pass:", n_pass)
+    print("Total: %d" % n_total)
+    print("Unmapped: %d (%.2f%%)" % (n_unmapped, get_perc(n_unmapped, n_total)))
+    print("InvalidSeqname: %d (%.2f%%)" % (n_seqname, get_perc(n_seqname, n_total)))
+    print("SecondaryMapped: %d (%.2f%%)" % (n_secondary, get_perc(n_secondary, n_total)))
+    print("LowMapQuality: %d (%.2f%%)" % (n_mapq, get_perc(n_mapq, n_total)))
+    print("Other: %d (%.2f%%)" % (n_other, get_perc(n_other, n_total)))
+    print("Pass: %d (%.2f%%)" % (n_pass, get_perc(n_pass, n_total)))
     
 
 def filter_bam(args=None):

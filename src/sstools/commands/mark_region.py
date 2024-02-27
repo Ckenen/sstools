@@ -5,12 +5,6 @@ from pyBioInfo.Range import GRange
 from pyBioInfo.Utils import ShiftLoader
 from sstools import utils
 
-usage = """
-
-    sstools MarkRegion [options] <input.bam> <output.bam>
-    
-This command will add a TAG to the BAM file.
-"""
 
 def load_regions(f, chrom):
     try:
@@ -37,7 +31,6 @@ def run_pipeline(inbam, outbam, inbed, f_matrix=None,
     with pysam.AlignmentFile(inbam) as f, \
         pysam.TabixFile(inbed) as f2, \
         pysam.AlignmentFile(outbam, "wb", f) as fw:
-            
         for chrom in f.references:
             regions = load_regions(f2, chrom)
             loader = ShiftLoader(regions)
@@ -58,7 +51,6 @@ def run_pipeline(inbam, outbam, inbed, f_matrix=None,
                 if rm_not_hit and not is_hit:
                     continue
                 fw.write(s)
-                
     if h_matrix:
         h_matrix.close()
         
@@ -70,10 +62,14 @@ def run_pipeline(inbam, outbam, inbed, f_matrix=None,
     print("NotHit: %d (%.2f%%)" % (n_not_hit, utils.divide_zero(n_not_hit * 100, n_total)))
 
 
+usage = """sstools MarkRegion [options] <input.bam> <input.bed> <output.bam>
+    
+This command will add a TAG to the BAM file.
+"""
+
+
 def mark_region(args):
     parser = optparse.OptionParser(usage=usage)
-    parser.add_option("-f", "--region-file", dest="region", metavar="PATH",
-                        help="PATH of regions in BED format. [%default]")
     parser.add_option("-m", "--matrix-file", dest="matrix", metavar="PATH",
                         help="PATH of output matrix file. [%default]")
     parser.add_option("-n", "--tag-name", dest="tag_name", default="XR", metavar="STR",
@@ -83,16 +79,14 @@ def mark_region(args):
     parser.add_option("-R", "--remove-not-hit", dest="remove_not_hit", action="store_true", default=False, 
                         help="Remove alignments that not hit any region. [%default]")
     options, args = parser.parse_args(args)
-    if len(args) != 2:
-        parser.print_help()
-        exit(1)
+    inbam, inbed, outbam = args
     
-    run_pipeline(
-        inbam=args[0], 
-        outbam=args[1], 
-        inbed=options.region, 
+    run_pipeline(inbam, outbam, inbed, 
         f_matrix=options.matrix, 
         tag_name=options.tag_name,
         rm_hit=options.remove_hit, 
         rm_not_hit=options.remove_not_hit)
     
+    
+if __name__ == "__main__":
+    mark_region()
