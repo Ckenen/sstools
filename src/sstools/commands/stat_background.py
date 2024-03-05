@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import sys
 import os
 import re
 import optparse
@@ -14,17 +13,16 @@ PATTERN = "^chr[0-9]+$"
 ANCHOR_START = 0
 ANCHOR_CENTER = 1
 ANCHOR_END = 2
-MIN_MAPQ = 60
 
 
-def get_reads(bamfile, chrom, rm_dup, rm_low_conf):
+def get_reads(bamfile, chrom, rm_dup, rm_low_conf, mapq):
     crick, watson = 0, 0
     with pysam.AlignmentFile(bamfile) as f:
         for s in f.fetch(chrom):
             if s.is_supplementary or s.is_secondary:
                 continue
-            # if s.mapping_quality < MIN_MAPQ:
-            #     continue
+            if s.mapping_quality < mapq:
+                continue
             if rm_dup and s.is_duplicate:
                 continue
             if rm_low_conf:
@@ -44,12 +42,15 @@ def stat_background(args=None):
     parser = optparse.OptionParser(usage="%prog [options] input.bam output.tsv")
     parser.add_option("-t", "--threads", dest="threads", metavar="INT", default=1, type="int", 
                       help="Threads for running. [%default]")
+    parser.add_option("-q", "--mapq", dest="mapq", type="int", metavar="INT", default=0, 
+                      help="[%default]")
     parser.add_option("-s", "--summary", dest="summary", metavar="PATH", default=None, 
                       help="Output summary to PATH. [%default]")
     options, args = parser.parse_args(args)
     bamfile, outfile = args
     threads = options.threads
     smrfile = options.summary
+    mapq = options.mapq
     name = os.path.basename(os.path.splitext(bamfile)[0])
 
     results = []
@@ -58,7 +59,7 @@ def stat_background(args=None):
         for chrom in f.references:
             if CHECK_PATTERN and re.match(PATTERN, chrom) is None:
                 continue
-            r = pool.apply_async(get_reads, (bamfile, chrom, True, False))
+            r = pool.apply_async(get_reads, (bamfile, chrom, True, False, mapq))
             results.append(r)
     pool.close()
     pool.join()
