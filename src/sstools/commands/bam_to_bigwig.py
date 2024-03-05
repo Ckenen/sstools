@@ -9,8 +9,10 @@ import pysam
 
 REUSE = False
 
-
-def _worker(bamfile, sizefile, chrom, outdir):
+def _worker(bamfile, sizefile, chrom, outdir, 
+            min_mapq=0, 
+            keep_secondary=False, 
+            keep_supplementary=False):
     f_bed = os.path.join(outdir, "%s.bed" % chrom)
     f_bg1 = os.path.join(outdir, "%s.bedgraph" % chrom)
     f_bg2 = os.path.join(outdir, "%s.sorted.bedgraph" % chrom)
@@ -18,12 +20,27 @@ def _worker(bamfile, sizefile, chrom, outdir):
     if not REUSE or not os.path.exists(f_bed):
         with pysam.AlignmentFile(bamfile) as f, open(f_bed, "w+") as fw:
             for s in f.fetch(chrom):
+                if s.is_secondary:
+                    if not keep_secondary:
+                        continue
+                elif s.is_supplementary:
+                    if not keep_supplementary:
+                        continue
+                    if s.mapping_quality < min_mapq:
+                        continue
+                else:
+                    if s.mapping_quality < min_mapq:
+                        continue
                 start = s.reference_start
                 end = s.reference_end
-                name = s.query_name
-                score = s.mapping_quality
-                strand = "-" if s.is_reverse else "+"
-                items = [chrom, start, end, name, score, strand]
+                
+                # name = s.query_name
+                # score = s.mapping_quality
+                # strand = "-" if s.is_reverse else "+"
+                # items = [chrom, start, end, name, score, strand]
+                
+                items = [chrom, start, end]
+                
                 line = "\t".join(map(str, items))
                 fw.write(line + "\n")
 
@@ -40,11 +57,18 @@ def _worker(bamfile, sizefile, chrom, outdir):
 
 def bam_to_bigwig(args=None):
     parser = optparse.OptionParser(usage="%prog [options] <input.bam> <output.bw>")
-    parser.add_option("-t", "--threads", dest="threads", type="int", metavar="INT", 
+    parser.add_option("-q", "--mapq", dest="mapq", type="int", metavar="INT", default=20, 
+                      help="[%default]")
+    parser.add_option("--secondary", dest="keep_secondary", action="store_true")
+    parser.add_option("--supplementary", dest="keep_supplementary", action="store_true")
+    parser.add_option("-t", "--threads", dest="threads", type="int", metavar="INT",  default=1,
                       help="Threads. [%default]")
     options, args = parser.parse_args(args)
     bamfile, bwfile = args
     threads = options.threads
+    mapq = options.mapq
+    keep_sec = options.keep_secondary
+    keep_sup = options.keep_supplementary
 
     tmpdir = bwfile + ".TMP"
     if not os.path.exists(tmpdir):
@@ -63,7 +87,7 @@ def bam_to_bigwig(args=None):
     pool = mp.Pool(threads)
     results = []
     for chrom in chroms:
-        params = (bamfile, sizefile, chrom, tmpdir)
+        params = (bamfile, sizefile, chrom, tmpdir, mapq, keep_sec, keep_sup)
         results.append(pool.apply_async(_worker, params))
     pool.close()
     pool.join()

@@ -14,6 +14,7 @@ PATTERN = "^chr[0-9]+$"
 ANCHOR_START = 0
 ANCHOR_CENTER = 1
 ANCHOR_END = 2
+MIN_MAPQ = 60
 
 
 def get_reads(bamfile, chrom, rm_dup, rm_low_conf):
@@ -22,6 +23,8 @@ def get_reads(bamfile, chrom, rm_dup, rm_low_conf):
         for s in f.fetch(chrom):
             if s.is_supplementary or s.is_secondary:
                 continue
+            # if s.mapping_quality < MIN_MAPQ:
+            #     continue
             if rm_dup and s.is_duplicate:
                 continue
             if rm_low_conf:
@@ -66,7 +69,7 @@ def stat_background(args=None):
         background = np.divide(min(crick, watson), (crick + watson))
         rows.append([chrom, crick, watson, background])
     df = pd.DataFrame(rows, columns=["Chrom", "Crick", "Watson", "Background"])
-    assert LOWEST_N < len(df)
+    assert len(df) > LOWEST_N
     df.to_csv(outfile, sep="\t", index=False)
     
     if smrfile:

@@ -38,7 +38,7 @@ Commands:
        PlotBinRead      Plot bin read count.
        
     -- Developed
-       
+       ExtremeRegion    Scan extreme coverage regions.
        
        
        
@@ -127,8 +127,11 @@ def main():
     from sstools.commands.quantify_sv import quantify_sv
     functions["QuantifySV"] = quantify_sv
     from sstools.commands.bam_to_bigwig import bam_to_bigwig
-    functions["BamToBigwig"] = bam_to_bigwig
-
+    functions["BamToBigWig"] = bam_to_bigwig
+    
+    from sstools.commands.scan_extreme_region import scan_extreme_region
+    functions["ExtremeRegion"] = scan_extreme_region
+    
     if command in functions:
         functions[command](args)
         exit(0)

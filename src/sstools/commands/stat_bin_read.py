@@ -7,8 +7,9 @@ import pysam
 ANCHOR_START = 0
 ANCHOR_CENTER = 1
 ANCHOR_END = 2
+# MIN_MAPQ = 20
 
-def worker(bamfile, chrom, width, rmdup, rmlc, anchor):
+def _worker(bamfile, chrom, width, rmdup, rmlc, anchor, mapq):
     with pysam.AlignmentFile(bamfile) as f:
         length = f.get_reference_length(chrom)
         nbin = int(length / width)
@@ -27,6 +28,8 @@ def worker(bamfile, chrom, width, rmdup, rmlc, anchor):
             if s.is_supplementary:
                 continue
             if s.is_secondary:
+                continue
+            if s.mapping_quality < mapq:
                 continue
             if rmdup and s.is_duplicate:
                 continue
@@ -73,13 +76,14 @@ def worker(bamfile, chrom, width, rmdup, rmlc, anchor):
         return df
 
 
-def run_pipeline(inbam, outfile, threads=1, width=1000000, rmdup=False, rmlc=False, anchor=ANCHOR_START):
+def run_pipeline(inbam, outfile, threads=1, width=1000000, 
+                 rmdup=False, rmlc=False, anchor=ANCHOR_START, mapq=0):
     results = []
     pool = mp.Pool(threads)
     with pysam.AlignmentFile(inbam) as f:
         for chrom in f.references:
-            args = (inbam, chrom, width, rmdup, rmlc, anchor)
-            r = pool.apply_async(worker, args)
+            args = (inbam, chrom, width, rmdup, rmlc, anchor, mapq)
+            r = pool.apply_async(_worker, args)
             results.append(r)
     pool.close()
     pool.join()
@@ -95,13 +99,15 @@ usage = """
 def stat_bin_read(args):
     parser = optparse.OptionParser(usage=usage)
     parser.add_option("-d", "--remove-duplicates", dest="rmdup", action="store_true", default=False,
-                      help="Remove duplicate reads.")
+                      help="Remove duplicate reads. [%default]")
     parser.add_option("-c", "--remove-low-confidence", dest="rmlc", action="store_true", default=False, 
-                      help="Remove low confidence reads.")
+                      help="Remove low confidence reads. [%dfault]")
     parser.add_option("-w", "--width", dest="width", type="int", default=1000000, metavar="INT", 
-                      help="")
+                      help="[%default]")
+    parser.add_option("-q", "--mapq", dest="mapq", type="int", metavar="INT", default=20, 
+                      help="[%default]")
     parser.add_option("-t", "--threads", dest="threads", type="int", default=1, metavar="INT", 
-                      help="")
+                      help="[%default]")
     parser.add_option("-a", "--anchor", dest="anchor", type="int", default=ANCHOR_START, metavar="INT", 
                       help="Anchor to assign bin. (0: start, 1: center, 2: end) [%default]")
     options, args = parser.parse_args(args)
@@ -114,7 +120,8 @@ def stat_bin_read(args):
         width=options.width, 
         rmdup=options.rmdup, 
         rmlc=options.rmlc,
-        anchor=options.anchor
+        anchor=options.anchor,
+        mapq=options.mapq
     )
 
 
