@@ -20,6 +20,8 @@ def get_reads(bamfile, chrom, rm_dup, rm_low_conf):
     crick, watson = 0, 0
     with pysam.AlignmentFile(bamfile) as f:
         for s in f.fetch(chrom):
+            if s.is_supplementary or s.is_secondary:
+                continue
             if rm_dup and s.is_duplicate:
                 continue
             if rm_low_conf:

@@ -19,7 +19,7 @@ def load_phased_snps(f, chrom):
                 ps = record.samples[sample]["PS"]
                 if ps == ".":
                     continue
-                if ps != "PATMAT" and ps != "0": # GIAB VCF
+                if ps != "PATMAT" and ps != "0": # global phased
                     continue
                 gt = record.samples[sample]["GT"]
                 a1 = record.alleles[gt[0]]
@@ -52,8 +52,8 @@ def load_phased_snps(f, chrom):
         raise RuntimeError()
     
 
-def get_parentals(segment, snps):
-    parentals = []
+def get_haplotypes(segment, snps):
+    vs = []
     parsed_cigar = SegmentTools.parse_cigar(segment)
     if len(snps) > 0:
         for snp in snps:
@@ -61,27 +61,27 @@ def get_parentals(segment, snps):
             if base is None:
                 continue
             if base == "-":
-                parentals.append("-")
+                vs.append("X")  # Missing
             elif base == snp.allele1:
-                parentals.append("P")  # Paternal
+                vs.append("1")  # HP1, Paternal
             elif base == snp.allele2:
-                parentals.append("M")  # Maternal
+                vs.append("2")  # HP2, Maternal
             else:
-                parentals.append("O")  # Other
-    return parentals
+                vs.append("O")  # Other
+    return vs
 
 
-def determine_parental(parentals):
-    parental = "U"  # Unknown
-    if len(parentals) > 0:
-        items = list(sorted(Counter(parentals).items(), key=lambda item: item[1]))
+def determine_haplotype(haplotypes):
+    v = "U"  # Unknown
+    if len(haplotypes) > 0:
+        items = list(sorted(Counter(haplotypes).items(), key=lambda item: item[1]))
         if len(items) > 0:
-            parental = items[-1][0]
-            if (len(parental) > 1) and (items[-2][1] == items[-1][1]):
-                parental = "A"  # Ambigous
+            v = items[-1][0]
+            if (len(v) > 1) and (items[-2][1] == items[-1][1]):
+                v = "A"  # Ambigous
         else:
             assert False
-    return parental
+    return v
 
 
 def run_pipeline(inbam, outbam, phased, detail, tag_name):
@@ -104,13 +104,13 @@ def run_pipeline(inbam, outbam, phased, detail, tag_name):
                 start = segment.reference_start
                 end = segment.reference_end
                 snps = list(loader.fetch(chrom=chrom, start=start, end=end))
-                parentals = get_parentals(segment, snps)
-                parental = determine_parental(parentals)
+                hps = get_haplotypes(segment, snps)
+                hp = determine_haplotype(hps)
                 if h_detail is not None:
-                    detail = json.dumps(Counter(parentals))
-                    h_detail.write("%s\t%s\t%s\n" % (segment.query_name, parental, detail))
-                counter[parental] += 1
-                segment.set_tag(tag_name, parental)
+                    detail = json.dumps(Counter(hps))
+                    h_detail.write("%s\t%s\t%s\n" % (segment.query_name, hp, detail))
+                counter[hp] += 1
+                segment.set_tag(tag_name, hp)
                 fw.write(segment)   
         f2.close()
     if h_detail:
@@ -118,17 +118,17 @@ def run_pipeline(inbam, outbam, phased, detail, tag_name):
         
     total = sum(counter.values())
     print("Total: %d" % total)
-    print("Paternal: %d (%.2f%%)" % (counter["P"], utils.divide_zero(counter["P"] * 100, total)))
-    print("Maternal: %d (%.2f%%)" % (counter["M"], utils.divide_zero(counter["M"] * 100, total)))
+    print("Paternal: %d (%.2f%%)" % (counter["1"], utils.divide_zero(counter["1"] * 100, total)))
+    print("Maternal: %d (%.2f%%)" % (counter["2"], utils.divide_zero(counter["2"] * 100, total))) 
     print("Other: %d (%.2f%%)" % (counter["O"], utils.divide_zero(counter["O"] * 100, total)))
     print("Ambiguous: %d (%.2f%%)" % (counter["A"], utils.divide_zero(counter["A"] * 100, total)))
-    print("Missing: %d (%.2f%%)" % (counter["-"], utils.divide_zero(counter["-"] * 100, total)))
+    print("Missing: %d (%.2f%%)" % (counter["X"], utils.divide_zero(counter["X"] * 100, total)))
     print("Unknown: %d (%.2f%%)" % (counter["U"], utils.divide_zero(counter["U"] * 100, total)))
 
 
-usage = """sstools MarkHaplotype [options] <input.bam> <phased.bed.gz|phased.vcf.gz> <output.bam>
+usage = """sstools MarkHaplotype [options] <input.bam> <phased.vcf.gz> <output.bam>
 
-<phased.bed.gz|phased.vcf.gz>: PATH of phased SNPs file in BED/VCF format.
+phased.vcf.gz: PATH of phased SNPs file in BED/VCF format.
 For BED format, the name of record is expected to 'P|M' (eg. 'A|G').
 For VCF format, the phase set (PS) is expected to 'PATMAT' or '0'.
 """

@@ -13,6 +13,8 @@ def _worker(bamfile, chrom):
         length = bam.get_reference_length(chrom)
         regions = []
         for s in bam.fetch(chrom):
+            if s.is_secondary:
+                continue
             start = s.reference_start
             end = s.reference_end
             regions.append([start, end])

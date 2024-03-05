@@ -21,6 +21,8 @@ def _worker(bamfile, chrom, layout):
             for s in bam.fetch(chrom):
                 if REMOVE_DUPLICATES and s.is_duplicate:
                     continue
+                if s.is_supplementary or s.is_secondary:
+                    continue
                 start = s.reference_start
                 end = s.reference_end
                 array.append([s.query_name, end - start])
@@ -28,6 +30,8 @@ def _worker(bamfile, chrom, layout):
             segments = defaultdict(list)
             for s in bam.fetch(chrom):
                 if REMOVE_DUPLICATES and s.is_duplicate:
+                    continue
+                if s.is_supplementary or s.is_secondary:
                     continue
                 if s.is_proper_pair:
                     segments[s.query_name].append(s)

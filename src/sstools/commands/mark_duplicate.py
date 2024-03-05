@@ -1,20 +1,36 @@
 #!/usr/bin/env python
 import optparse
 import numpy as np
+from collections import defaultdict
 import pysam
-from pyBioInfo.IO.File import Alignment
+from pyBioInfo.Range import GRange
+# from pyBioInfo.IO.File import Alignment
 from pyBioInfo.Utils import BundleBuilder
 
 
-def get_query_length(a):
-    return a.segment.query_length
+class Read(GRange):
+    def __init__(self, primary, supplementaries, secondaries):
+        chrom = primary.reference_name
+        start = primary.reference_start
+        end = primary.reference_end
+        name = primary.query_name
+        strand = "-" if primary.is_reverse else "+"
+        super(Read, self).__init__(chrom=chrom, start=start, end=end, name=name, strand=strand)
+        self.primary = primary
+        self.supplementaries = supplementaries
+        self.secondaries = secondaries
+        self.query_length = primary.query_length
+        
+
+# def get_query_length(s):
+#     return s.query_length
 
 
-def load_alignments(segments):
-    for s in segments:
-        a = Alignment(s)
-        a.query_length = get_query_length(a)
-        yield a
+# def load_alignments(segments):
+#     for s in segments:
+#         a = Alignment(s)
+#         a.query_length = get_query_length(s)
+#         yield a
 
 
 def cluster_by_strand(clusters):
@@ -87,19 +103,98 @@ def cluster_by_end(clusters, max_distance):
     return array
             
             
-def set_duplicate_flags(alignments, index):
-    alignments = list(sorted(alignments, key=lambda x: len(x), reverse=True))
-    for i, a in enumerate(alignments):
-        if i == 0:
-            a.segment.flag = a.segment.flag & 0b101111111111 # unique
-        else:
-            a.segment.flag = a.segment.flag | 0b010000000000 # dupplicate
-        a.segment.set_tag("DN", index)
-        a.segment.set_tag("DS", len(alignments))
-        a.segment.set_tag("DI", i)  # duplicate index
+# def set_duplicate_flags(alignments, index):
+#     alignments = list(sorted(alignments, key=lambda x: len(x), reverse=True))
+#     for i, a in enumerate(alignments):
+#         if i == 0:
+#             a.segment.flag = a.segment.flag & 0b101111111111 # unique
+#         else:
+#             a.segment.flag = a.segment.flag | 0b010000000000 # dupplicate
+#         a.segment.set_tag("DN", index)
+#         a.segment.set_tag("DS", len(alignments))
+#         a.segment.set_tag("DI", i)  # duplicate index
 
+
+def set_duplicate_flags(reads, index):
+    reads = list(sorted(reads, key=lambda x: len(x), reverse=True))
+    for i, r in enumerate(reads):
+        ss = [r.primary]
+        if r.supplementaries:
+            ss.extend(r.supplementaries)
+        if r.secondaries:
+            ss.extend(r.secondaries)
+        for s in ss:
+            if i == 0:
+                s.flag = s.flag & 0b101111111111 # unique
+            else:
+                s.flag = s.flag | 0b010000000000 # dupplicate
+            s.set_tag("DN", index)
+            s.set_tag("DS", len(reads))
+            s.set_tag("DI", i)  # duplicate index
+            
       
-def run_pipeline(inbam, outbam, max_distance, strand_sense, read_matrix, group_matrix):
+# def run_pipeline(inbam, outbam, max_distance, strand_sense, read_matrix, group_matrix):
+#     n_total = 0
+#     n_uniq = 0
+#     index = 0 # group index
+    
+#     h_read = None
+#     if read_matrix:
+#         h_read = open(read_matrix, "w+")
+#         h_read.write("Read\tGroup\tSize\tIndex\n")
+        
+#     h_group = None
+#     if group_matrix:
+#         h_group = open(group_matrix, "w+")
+#         h_group.write("Group\tSize\tReads\n")
+        
+#     with pysam.AlignmentFile(inbam) as f, pysam.AlignmentFile(outbam, "wb", f) as fw:
+#         for chrom in f.references:
+#             for bundle in BundleBuilder(load_alignments(f.fetch(chrom)), keep=True):
+#                 alignments = bundle.data
+#                 alignments_primary = []
+#                 for a in alignments:
+#                     if not a.segment.is_supplementary:
+#                         alignments_primary.append(a)
+#                 n_total += len(alignments_primary)
+#                 clusters = [alignments_primary]
+#                 if strand_sense:
+#                     clusters = cluster_by_strand(clusters)
+#                 while True:
+#                     n = len(clusters)
+#                     clusters = cluster_by_length(clusters, 1.2)
+#                     clusters = cluster_by_start(clusters, max_distance)
+#                     clusters = cluster_by_end(clusters, max_distance)
+#                     if len(clusters) == n:
+#                         break
+#                 for cluster in clusters:
+#                     set_duplicate_flags(cluster, index)                    
+#                     if h_group:
+#                         read_names = ",".join([a.name for a in cluster])
+#                         line = "\t".join(map(str, [index, len(clusters), read_names]))
+#                         h_group.write(line + "\n")
+#                     index += 1
+#                     n_uniq += 1
+                
+#                 for a in alignments:
+#                     fw.write(a.segment)
+#                     if h_read and not a.segment.is_supplementary:
+#                         line = "\t".join(map(str, [
+#                             a.segment.query_name, 
+#                             a.segment.get_tag("DN"), 
+#                             a.segment.get_tag("DS"), 
+#                             a.segment.get_tag("DI")]))
+#                         h_read.write(line + "\n")
+#     if h_read:
+#         h_read.close()        
+#     if h_group:
+#         h_group.close()
+        
+#     print("Total: %d" % n_total)
+#     print("Uniq: %d (%.2f%%)" % (n_uniq, np.divide(n_uniq * 100, n_total)))
+    
+
+def run_pipeline(inbam, outbam, max_distance, strand_sense, read_matrix, group_matrix, mark_supplementary=False):
     n_total = 0
     n_uniq = 0
     index = 0 # group index
@@ -114,43 +209,71 @@ def run_pipeline(inbam, outbam, max_distance, strand_sense, read_matrix, group_m
         h_group = open(group_matrix, "w+")
         h_group.write("Group\tSize\tReads\n")
         
-    with pysam.AlignmentFile(inbam) as f, pysam.AlignmentFile(outbam, "wb", f) as fw:
-        for chrom in f.references:
-            for bundle in BundleBuilder(load_alignments(f.fetch(chrom)), keep=True):
-                alignments = bundle.data
-                alignments_primary = []
-                for a in alignments:
-                    if not a.segment.is_supplementary:
-                        alignments_primary.append(a)
-                n_total += len(alignments_primary)
-                clusters = [alignments_primary]
-                if strand_sense:
-                    clusters = cluster_by_strand(clusters)
-                while True:
-                    n = len(clusters)
-                    clusters = cluster_by_length(clusters, 1.2)
-                    clusters = cluster_by_start(clusters, max_distance)
-                    clusters = cluster_by_end(clusters, max_distance)
-                    if len(clusters) == n:
-                        break
-                for cluster in clusters:
-                    set_duplicate_flags(cluster, index)                    
-                    if h_group:
-                        read_names = ",".join([a.name for a in cluster])
-                        line = "\t".join(map(str, [index, len(clusters), read_names]))
-                        h_group.write(line + "\n")
-                    index += 1
-                    n_uniq += 1
+    with pysam.AlignmentFile(inbam) as f, \
+        pysam.AlignmentFile(outbam, "wb", f) as fw:
+            
+        chroms = list(f.references)
+        
+        if mark_supplementary:
+            all_reads = []
+            all_segments = []
+            data = defaultdict(list)
+            for s in f.fetch(until_eof=True):
+                all_segments.append(s)
+                if s.is_unmapped:
+                    continue
+                data[s.query_name].append(s)
+            for k, v in data.items():
+                primaries = [] # primary
+                supplementaries = [] # supplementaries
+                secondaries = [] # secondaries
+                for s in v:
+                    if s.is_supplementary:
+                        supplementaries.append(s)
+                    elif s.is_secondary:
+                        secondaries.append(s)
+                    else:
+                        primaries.append(s)
+                if len(primaries) == 0:
+                    raise RuntimeError()
+                elif len(primaries) == 1:
+                    r = Read(primaries[0], supplementaries, secondaries)
+                    all_reads.append(r)
+                else:
+                    raise RuntimeError()
+            chrom_reads = defaultdict(list)
+            for r in all_reads:
+                chrom_reads[r.chrom].append(r)
                 
-                for a in alignments:
-                    fw.write(a.segment)
-                    if h_read and not a.segment.is_supplementary:
-                        line = "\t".join(map(str, [
-                            a.segment.query_name, 
-                            a.segment.get_tag("DN"), 
-                            a.segment.get_tag("DS"), 
-                            a.segment.get_tag("DI")]))
-                        h_read.write(line + "\n")
+            for chrom in chroms:
+                for bundle in BundleBuilder(sorted(chrom_reads[chrom]), keep=True):
+                    n_total += len(bundle.data)
+                    clusters = [bundle.data]
+                    if strand_sense:
+                        clusters = cluster_by_strand(clusters)
+                    while True:
+                        n = len(clusters)
+                        clusters = cluster_by_length(clusters, 1.2)
+                        clusters = cluster_by_start(clusters, max_distance)
+                        clusters = cluster_by_end(clusters, max_distance)
+                        if len(clusters) == n:
+                            break
+                    for cluster in clusters:
+                        set_duplicate_flags(cluster, index)
+                        
+                        if h_group:
+                            read_names = ",".join([a.name for a in cluster])
+                            line = "\t".join(map(str, [index, len(clusters), read_names]))
+                            h_group.write(line + "\n")
+                        index += 1
+                        n_uniq += 1
+                        
+            for s in all_segments:
+                fw.write(s)
+            
+        else:
+            raise NotImplementedError()
+            
     if h_read:
         h_read.close()        
     if h_group:
@@ -186,7 +309,7 @@ def mark_duplicate(args):
     strand_sense = options.strand_sense
     max_distance = options.max_distance
     
-    run_pipeline(inbam, outbam, max_distance, strand_sense, read_matrix, group_matrix)
+    run_pipeline(inbam, outbam, max_distance, strand_sense, read_matrix, group_matrix, mark_supplementary=True)
 
 
 if __name__ == "__main__":

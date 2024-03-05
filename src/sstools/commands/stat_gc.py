@@ -19,6 +19,8 @@ def _worker(bamfile, fafile, chrom):
         for s in bam.fetch(chrom):
             if REMOVE_DUPLICATES and s.is_duplicate:
                 continue
+            if s.is_supplementary or s.is_secondary:
+                continue
             start = s.reference_start
             end = s.reference_end
             counter = Counter(fa.fetch(chrom, start, end).upper())

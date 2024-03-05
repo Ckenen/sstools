@@ -13,6 +13,7 @@ WIDTH = 100
 PATTERN = "^chr([0-9]+|[XY])$"
 REMOVE_DUPLICATES = True
 
+
 def load_window_gc_from_fasta(fafile, chrom, width):
     with pysam.FastaFile(fafile) as fa:
         length = fa.get_reference_length(chrom)
@@ -47,6 +48,8 @@ def _worker(fafile, window_gc_list, bamfile, chrom, width):
         vs2 = [0] * len(vs1) # reads
         for s in bam.fetch(chrom):
             if REMOVE_DUPLICATES and s.is_duplicate:
+                continue
+            if s.is_supplementary or s.is_secondary:
                 continue
             start = s.reference_start
             end = s.reference_end

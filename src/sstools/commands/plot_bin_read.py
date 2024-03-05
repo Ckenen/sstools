@@ -11,7 +11,6 @@ matplotlib.rcParams["font.family"] = "arial"
 import matplotlib.pyplot as plt
 
 usage = """
-
     sstools PlotBinRead [options] <input.tsv> <outfile.pdf>
 """
 
@@ -62,11 +61,11 @@ def plot_bin_read(args):
         plt.title("%.2f,%.2f(%.2f%%)" % (w, c, b))
         ys = np.arange(len(d)) + 0.5
         plt.barh(ys, d["Crick"], height=1)
-        plt.barh(ys, d["Crick.P"], height=1, color="blue")
-        plt.barh(ys, d["Crick.M"], left=d["Crick.P"], height=1, color="red")
+        plt.barh(ys, d["Crick.HP1"], height=1, color="blue")
+        plt.barh(ys, d["Crick.HP2"], left=d["Crick.HP1"], height=1, color="red")
         plt.barh(ys, -d["Watson"], height=1)
-        plt.barh(ys, -d["Watson.M"], height=1, color="red")
-        plt.barh(ys, -d["Watson.P"], left=-d["Watson.M"], height=1, color="blue")
+        plt.barh(ys, -d["Watson.HP2"], height=1, color="red")
+        plt.barh(ys, -d["Watson.HP1"], left=-d["Watson.HP2"], height=1, color="blue")
         plt.xlim(-xmax, xmax)
         plt.ylim(0, ymax)
         plt.xlabel(chrom)

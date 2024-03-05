@@ -22,6 +22,8 @@ def _worker(bamfile, chrom, width, rm_dup, rm_low_conf, anchor):
             nbin += 1
         counts = np.zeros(nbin)
         for s in f.fetch(chrom):
+            if s.is_supplementary or s.is_secondary:
+                continue
             if rm_dup and s.is_duplicate:
                 continue
             if rm_low_conf and s.has_tag("XH") and s.get_tag("XH") == "N":
@@ -55,9 +57,9 @@ def calculate_spikiness(counts):
 def stat_spikiness(args=None):
     parser = optparse.OptionParser(usage="%prog [options] input.bam output.tsv")
     parser.add_option("-w", "--width", dest="width", type="int", default=1000000, metavar="INT", 
-                      help="")
+                      help="Width of bin. [%default]")
     parser.add_option("-t", "--threads", dest="threads", type="int", default=1, metavar="INT", 
-                      help="")
+                      help="Threads. [%default]")
     options, args = parser.parse_args(args)
     bamfile, outfile = args
     width = options.width

@@ -9,13 +9,15 @@ import pysam
 DEFAULT_CHROM_PATTERN = "^chr[0-9]+$"
 
 
-def _worker(bamfile, chrom, rm_dup):
+def _worker(bamfile, chrom, rmdup=True):
     data = dict()
     with pysam.AlignmentFile(bamfile) as bam:
         length = bam.get_reference_length(chrom)
         bases = 0
         for s in bam.fetch(chrom):
-            if rm_dup and s.is_duplicate:
+            if s.is_secondary:
+                continue
+            if rmdup and s.is_duplicate:
                 continue
             start = s.reference_start
             end = s.reference_end
