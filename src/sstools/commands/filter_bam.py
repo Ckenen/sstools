@@ -5,18 +5,20 @@ from collections import defaultdict
 import pysam
 from pyBioInfo.Utils import SegmentTools
 
+
 def get_perc(n1, n2):
     if n2 == 0:
         return 0
     else:
         return n1 * 100 / n2
-
+    
    
 def pipeline_pe(inbam, outbam, pattern, min_mapq):
     n_total = 0
     n_unmapped = 0
     n_seqname = 0
     n_secondary = 0
+    n_supplementary = 0
     n_proper_pair = 0
     n_mapq = 0
     n_other = 0
@@ -28,11 +30,14 @@ def pipeline_pe(inbam, outbam, pattern, min_mapq):
             if s.is_unmapped:
                 n_unmapped += 1
                 continue
-            if pattern and re.match(pattern, s.referene_name) is None:
+            if pattern and re.match(pattern, s.reference_name) is None:
                 n_seqname += 1
                 continue
             if s.is_secondary:
                 n_secondary += 1
+                continue
+            if s.is_supplementary:
+                n_supplementary += 1
                 continue
             if not s.is_proper_pair:
                 n_proper_pair += 1
@@ -62,17 +67,24 @@ def pipeline_pe(inbam, outbam, pattern, min_mapq):
             else:
                 n_other += len(ss)
                 continue
-        for s in SegmentTools.sort_segments(segments):
-            fw.write(s)
-    
+            
+        chrom_segments = defaultdict(list)
+        for s in segments:
+            chrom_segments[s.reference_name].append(s)
+        for chrom in f.references:
+            for s in SegmentTools.sort_segments(chrom_segments[chrom]):
+                fw.write(s)
+
     print("Total: %d" % n_total)
     print("UnMapped: %d (%.2f%%)" % (n_unmapped, get_perc(n_unmapped, n_total)))
     print("InvalidSeqName: %d (%.2f%%)" % (n_seqname, get_perc(n_seqname, n_total)))
     print("SecondaryMapped: %d (%.2f%%)" % (n_secondary, get_perc(n_secondary, n_total)))
+    print("SupplementaryMapped: %d (%.2f%%)" % (n_supplementary, get_perc(n_supplementary, n_total)))
     print("UnProperPair: %d (%.2f%%)" % (n_proper_pair, get_perc(n_proper_pair, n_total)))
     print("LowPrimaryMapQuality: %d (%.2f%%)" % (n_mapq, get_perc(n_mapq, n_total)))
     print("Other: %d (%.2f%%)" % (n_other, get_perc(n_other, n_total)))
     print("Pass: %d (%.2f%%)" % (n_pass, get_perc(n_pass, n_total)))
+
 
 def pipeline_se(inbam, outbam, pattern, mapq):
     n_total = 0
