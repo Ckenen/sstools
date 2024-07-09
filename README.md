@@ -5,32 +5,13 @@ NanoStrand-seq
 
 ## Installation
 
-    pip install sstools
+    # PyPI (TODO)
+    # pip install sstools
+
+    # Manual installation
+    export PYTHONPATH="`pwd`/src:${PYTHONPATH}"
+    export PATH="`pwd`/src/scripts:${PATH}"
 
 ## Usage
     
     sstools command --help
-
-No.|Subcommand|Description
-:-|:-|:-
-1|FilterBam|filter bam file
-
-## FilterBam
-
-## MarkDuplicate
-
-## MarkRegion
-
-## MarkHaplotype
-
-## CalBinRead
-
-## StatMappedLen
-
-CalGenomicCov
-
-StatGenomicCov
-
-CalGenomicDepth
-
-StatDuplicate
